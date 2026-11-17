@@ -185,7 +185,7 @@ export default function EngagementButton({ otherUserId, otherUserName, currentUs
           otherUserAuthId,
           'Mazel Tov! 💍',
           `You and ${currentUserName} are officially engaged! Wishing you both much happiness!`,
-          { type: 'engagement_confirmed' }
+          { type: 'engagement_confirmed', engagementId: result.engagement.id }
         );
         if (user) {
           await notificationService.sendNotification(
@@ -202,7 +202,7 @@ export default function EngagementButton({ otherUserId, otherUserName, currentUs
           otherUserAuthId,
           'Engagement Proposal 💍',
           `${currentUserName} has indicated that you both got engaged. Please confirm!`,
-          { type: 'engagement_proposal' }
+          { type: 'engagement_proposal', engagementId: result.engagement.id }
         );
         setSuccessMessage({
           title: 'Engagement Proposal Sent! 💍',
