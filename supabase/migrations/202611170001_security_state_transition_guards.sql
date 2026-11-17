@@ -1587,6 +1587,29 @@ begin
 end;
 $$;
 
+
+create or replace function public.get_profile_for_admin_by_user_id(p_user_id uuid)
+returns public.profiles
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+set row_security = off
+as $$
+declare
+  v_profile public.profiles%rowtype;
+begin
+  if auth.uid() is null or not exists (
+    select 1 from public.admin_users a where a.user_id = auth.uid()
+  ) then
+    raise exception 'Administrator access required' using errcode = '42501';
+  end if;
+  select * into v_profile from public.profiles p where p.user_id = p_user_id;
+  if not found then return null; end if;
+  return v_profile;
+end;
+$$;
+
 create or replace function public.get_all_profiles_for_admin(
   p_offset integer default 0,
   p_limit integer default 500
@@ -1742,11 +1765,13 @@ $$;
 
 revoke all on function public.get_my_profile() from public, anon;
 revoke all on function public.get_profile_for_admin_review(uuid) from public, anon;
+revoke all on function public.get_profile_for_admin_by_user_id(uuid) from public, anon;
 revoke all on function public.get_all_profiles_for_admin(integer, integer) from public, anon;
 revoke all on function public.get_profiles_for_viewer(uuid[]) from public, anon;
 revoke all on function public.get_public_profile_for_share(uuid) from public;
 grant execute on function public.get_my_profile() to authenticated;
 grant execute on function public.get_profile_for_admin_review(uuid) to authenticated;
+grant execute on function public.get_profile_for_admin_by_user_id(uuid) to authenticated;
 grant execute on function public.get_all_profiles_for_admin(integer, integer) to authenticated;
 grant execute on function public.get_profiles_for_viewer(uuid[]) to authenticated;
 grant execute on function public.get_public_profile_for_share(uuid) to anon, authenticated;
