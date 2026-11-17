@@ -221,7 +221,9 @@ export default function MatchmakerRequestCard({
       {request.matchmaker_status === "accepted" &&
         request.requested_status === "accepted" &&
         (request.requester_continuation_choice === "with_middle_person" ||
-          request.requested_continuation_choice === "with_middle_person") && (
+          request.requested_continuation_choice === "with_middle_person") &&
+        (requesterProfile?.phone || requesterProfile?.email || requesterProfile?.whatsapp ||
+          requestedProfile?.phone || requestedProfile?.email || requestedProfile?.whatsapp) && (
           <View style={styles.contactSection}>
             <View style={styles.contactHeader}>
               <Ionicons name="people" size={20} color="#1293DA" />
