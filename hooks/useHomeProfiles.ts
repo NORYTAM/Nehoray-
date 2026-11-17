@@ -130,7 +130,9 @@ function transformProfile(dbProfile: any, viewedProfileIds: string[]): Profile {
       ? `${dbProfile.location_city}, ${dbProfile.location_state}${dbProfile.location_country ? ', ' + dbProfile.location_country : ''}`
       : dbProfile.location_country;
   const location =
-    fieldPrivacy.location_city || fieldPrivacy.location_state ? 'Hidden' : locationString;
+    fieldPrivacy.location || fieldPrivacy.location_city || fieldPrivacy.location_state || fieldPrivacy.location_country
+      ? 'Hidden'
+      : locationString;
 
   return {
     id: dbProfile.id,
