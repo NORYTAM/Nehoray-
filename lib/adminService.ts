@@ -142,11 +142,9 @@ class AdminService {
     profileId: string
   ): Promise<{ success: boolean; profile?: Profile; error?: string }> {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', profileId)
-        .single();
+      const { data, error } = await supabase.rpc('get_profile_for_admin_review', {
+        p_profile_id: profileId,
+      });
 
       if (error || !data) {
         return { success: false, error: error?.message || 'Profile not found' };
@@ -358,21 +356,17 @@ class AdminService {
   ): Promise<{ success: boolean; profile?: Profile; error?: string }> {
     try {
       if (profileId) {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', profileId)
-          .maybeSingle();
+        const { data, error } = await supabase.rpc('get_profile_for_admin_review', {
+          p_profile_id: profileId,
+        });
         if (data) return { success: true, profile: data as Profile };
         if (error) console.warn('getUserProfile by id:', error.message);
       }
 
       if (userId) {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('user_id', userId)
-          .maybeSingle();
+        const { data, error } = await supabase.rpc('get_profile_for_admin_by_user_id', {
+          p_user_id: userId,
+        });
         if (data) return { success: true, profile: data as Profile };
         if (error) console.warn('getUserProfile by user:', error.message);
       }
@@ -396,11 +390,10 @@ class AdminService {
     const profiles: Profile[] = [];
     try {
       for (let from = 0; from < 20000; from += pageSize) {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('*')
-          .order('id', { ascending: true })
-          .range(from, from + pageSize - 1);
+        const { data, error } = await supabase.rpc('get_all_profiles_for_admin', {
+          p_offset: from,
+          p_limit: pageSize,
+        });
         if (error) return { profiles, error: error.message };
         const rows = (data ?? []) as Profile[];
         profiles.push(...rows);
