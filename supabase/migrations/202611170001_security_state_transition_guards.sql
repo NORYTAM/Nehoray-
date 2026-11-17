@@ -500,7 +500,8 @@ declare
 begin
   if auth.uid() is null then raise exception 'Authentication required' using errcode = '42501'; end if;
   select * into v_suggester from public.profiles where user_id = auth.uid();
-  if not found or v_suggester.status <> 'approved' or not v_suggester.is_active then
+  if not found or v_suggester.status <> 'approved' or not v_suggester.is_active
+     or coalesce(v_suggester.account_status, 'active') <> 'active' then
     raise exception 'An active approved profile is required';
   end if;
   if p_profile_one_id = p_profile_two_id
@@ -509,11 +510,15 @@ begin
     raise exception 'You cannot suggest yourself or the same profile twice';
   end if;
   select * into v_profile_one from public.profiles where id = p_profile_one_id;
-  if not found or v_profile_one.status <> 'approved' or not v_profile_one.is_active then
+  if not found or v_profile_one.status <> 'approved' or not v_profile_one.is_active
+     or coalesce(v_profile_one.account_status, 'active') <> 'active'
+     or v_profile_one.role <> 'single' then
     raise exception 'First profile is not available';
   end if;
   select * into v_profile_two from public.profiles where id = p_profile_two_id;
-  if not found or v_profile_two.status <> 'approved' or not v_profile_two.is_active then
+  if not found or v_profile_two.status <> 'approved' or not v_profile_two.is_active
+     or coalesce(v_profile_two.account_status, 'active') <> 'active'
+     or v_profile_two.role <> 'single' then
     raise exception 'Second profile is not available';
   end if;
 
@@ -785,9 +790,15 @@ begin
     raise exception 'This information field is not supported';
   end if;
   select * into v_requester from public.profiles where user_id = auth.uid();
-  if not found or v_requester.status <> 'approved' or not v_requester.is_active then raise exception 'An active approved profile is required'; end if;
+  if not found or v_requester.status <> 'approved' or not v_requester.is_active
+     or coalesce(v_requester.account_status, 'active') <> 'active' then
+    raise exception 'An active approved profile is required';
+  end if;
   select * into v_requested from public.profiles where id = p_requested_profile_id;
-  if not found or v_requested.status <> 'approved' or not v_requested.is_active then raise exception 'Requested profile is not available'; end if;
+  if not found or v_requested.status <> 'approved' or not v_requested.is_active
+     or coalesce(v_requested.account_status, 'active') <> 'active' then
+    raise exception 'Requested profile is not available';
+  end if;
   if v_requester.id = v_requested.id then raise exception 'You cannot request information from yourself'; end if;
 
   if exists (
