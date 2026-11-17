@@ -774,6 +774,7 @@ declare
   v_requester public.profiles%rowtype;
   v_requested public.profiles%rowtype;
   v_request public.info_requests%rowtype;
+  v_privacy_key text;
 begin
   if auth.uid() is null then raise exception 'Authentication required' using errcode = '42501'; end if;
   if p_field_name not in (
@@ -781,11 +782,17 @@ begin
     'torah_learning', 'education_level', 'has_children',
     'height', 'dob', 'phone', 'email', 'whatsapp',
     'location_city', 'location_state', 'location_country',
-    'languages', 'nationality', 'is_cohen', 'hashkafa_type',
-    'praying', 'post_high_school_path', 'current_occupation_study',
-    'plan_after_marriage', 'what_looking_for', 'marital_status',
-    'dress_style', 'wears_black_hat', 'head_covering',
-    'smoking', 'alcohol_consumption'
+    'languages', 'nationality', 'is_cohen', 'isCohen',
+    'hashkafa_type', 'hashkafaType', 'praying',
+    'post_high_school_path', 'postHighSchoolPath',
+    'current_occupation_study', 'currentOccupationStudy',
+    'plan_after_marriage', 'planAfterMarriage',
+    'what_looking_for', 'whatLookingFor',
+    'marital_status', 'maritalStatus',
+    'dress_style', 'dressStyle',
+    'wears_black_hat', 'wearsBlackHat',
+    'head_covering', 'headCovering',
+    'smoking', 'alcohol_consumption', 'alcoholConsumption'
   ) then
     raise exception 'This information field is not supported';
   end if;
@@ -819,8 +826,26 @@ begin
     raise exception 'Information requests are not available after a match is accepted';
   end if;
 
+  v_privacy_key := case p_field_name
+    when 'location_city' then 'location'
+    when 'location_state' then 'location'
+    when 'location_country' then 'location'
+    when 'is_cohen' then 'isCohen'
+    when 'hashkafa_type' then 'hashkafaType'
+    when 'post_high_school_path' then 'postHighSchoolPath'
+    when 'current_occupation_study' then 'currentOccupationStudy'
+    when 'plan_after_marriage' then 'planAfterMarriage'
+    when 'what_looking_for' then 'whatLookingFor'
+    when 'marital_status' then 'maritalStatus'
+    when 'dress_style' then 'dressStyle'
+    when 'wears_black_hat' then 'wearsBlackHat'
+    when 'head_covering' then 'headCovering'
+    when 'alcohol_consumption' then 'alcoholConsumption'
+    else p_field_name
+  end;
+
   if p_field_name <> 'pictures'
-     and coalesce(v_requested.field_privacy ->> p_field_name, 'false') <> 'true' then
+     and coalesce(v_requested.field_privacy ->> v_privacy_key, v_requested.field_privacy ->> p_field_name, 'false') <> 'true' then
     raise exception 'This field is not marked as private';
   end if;
   if p_field_name = 'pictures' and coalesce(v_requested.picture_privacy, 'none') not in ('private', 'one_time') then
