@@ -58,6 +58,85 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
+type NotificationCopy = { title: string; body: string };
+
+function notificationCopy(type: string, data: NotificationData): NotificationCopy | null {
+  switch (type) {
+    case "admin_new_profile":
+      return { title: "New profile pending review", body: "A new profile was submitted and needs review." };
+    case "admin_profile_resubmitted":
+      return { title: "Profile update pending review", body: "A profile was updated and is waiting for review." };
+    case "profile_approved":
+      return { title: "Profile approved", body: "Your profile is approved and is now visible to other members." };
+    case "profile_update_approved":
+      return { title: "Profile update approved", body: "Your profile update has been approved." };
+    case "profile_rejected":
+      return { title: "Profile needs attention", body: "Your profile needs changes before it can be approved. Open your profile to review the details." };
+    case "profile_update_rejected":
+      return { title: "Profile update not approved", body: "Your profile update was not approved. Open your profile to review the details." };
+    case "matchmaker_request":
+      return { title: "New matchmaking request", body: "A member asked you to help facilitate an introduction. Open Connect to review the request." };
+    case "matchmaker_responded":
+      return { title: data.response === "accepted" ? "Matchmaker accepted" : "Matchmaker declined", body: "Your matchmaker has responded to your introduction request. Open Connect to see the update." };
+    case "intro_request_from_matchmaker":
+      return { title: "New introduction request", body: "A potential introduction is waiting for your response. Open Connect to review it." };
+    case "intro_both_accepted":
+    case "match_accepted":
+      return { title: "Both sides said yes", body: "Both sides accepted the introduction. Open Connect to choose how to continue." };
+    case "requested_responded":
+      return { title: "Introduction response received", body: "The other party has responded to the introduction request." };
+    case "intro_declined":
+      return { title: "Introduction declined", body: "The introduction request was declined." };
+    case "matchmaker_selected":
+      return data.purpose === "counterpart_notice"
+        ? { title: "Matchmaker selected", body: "This introduction will continue with the help of a matchmaker." }
+        : { title: "You've been selected as a matchmaker", body: "Both parties have chosen to continue with your help. Open Connect for the details." };
+    case "suggestion":
+      return { title: "New match suggestion", body: "A possible match has been suggested for you. Open Connect to review it." };
+    case "suggestion_both_accepted":
+      return { title: "Both accepted the suggestion", body: "Both sides accepted the match suggestion. Open Connect to choose how to continue." };
+    case "suggestion_rejected":
+    case "suggestion_declined":
+      return { title: "Match suggestion declined", body: "A match suggestion was declined." };
+    case "suggestion_reverted":
+      return { title: "Suggestion response changed", body: "A member changed their response and is reconsidering the suggestion." };
+    case "suggestion_accepted_one_side":
+      return { title: "Someone accepted your suggestion", body: "One side accepted the match suggestion. The other side still needs to respond." };
+    case "suggestion_other_side_yes":
+      return { title: "A match suggestion is waiting", body: "The other side has already accepted the match suggestion. Open Connect to respond." };
+    case "info_request":
+      return { title: "Someone asked you for information", body: "A member requested access to information on your profile. Open Connect to review the request." };
+    case "info_request_approved":
+      return { title: "Information request approved", body: "Your request to view profile information was approved." };
+    case "info_request_declined":
+      return { title: "Information request declined", body: "Your request to view profile information was declined." };
+    case "engagement_proposal":
+      return { title: "Engagement confirmation received", body: "The other person has recorded an engagement confirmation." };
+    case "engagement_confirmed":
+      return { title: "Engagement confirmed", body: "Both sides confirmed the engagement." };
+    case "engagement_news":
+      return { title: "New engagement announcement", body: "A couple in the community confirmed their engagement. Mazal Tov!" };
+    default:
+      return null;
+  }
+}
+
+function sanitizeNotificationData(data: NotificationData, callerId: string): NotificationData {
+  const allowed = new Set([
+    "type", "purpose", "requestId", "suggestionId", "engagementId",
+    "profileId", "requestedProfileId", "requesterId", "singleUserId",
+    "response", "rejectedBy", "revertedBy", "fieldName", "wasApproved",
+  ]);
+  const result: NotificationData = { actorUserId: callerId };
+  for (const [key, value] of Object.entries(data)) {
+    if (!allowed.has(key)) continue;
+    if (typeof value === "string" || typeof value === "boolean") {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
 function shouldSendMatchEmail(type: string, data: NotificationData): boolean {
   if (type === "matchmaker_selected") {
     return data.purpose == null || data.purpose === "facilitator_chosen";
@@ -518,25 +597,31 @@ Deno.serve(async (req) => {
 
     const payload = input as Record<string, unknown>;
     const userId = stringValue(payload.userId);
-    const title = typeof payload.title === "string" ? payload.title.trim() : "";
-    const body = typeof payload.body === "string" ? payload.body.trim() : "";
+    const clientTitle = typeof payload.title === "string" ? payload.title.trim() : "";
+    const clientBody = typeof payload.body === "string" ? payload.body.trim() : "";
     const data = payload.data && typeof payload.data === "object" && !Array.isArray(payload.data)
       ? payload.data as NotificationData
       : null;
 
-    if (!userId || !title || !body || !data || title.length > MAX_TITLE_LENGTH || body.length > MAX_BODY_LENGTH) {
-      return jsonResponse({ error: "userId, title, body, and a supported notification type are required" }, 400);
+    if (!userId || !data || clientTitle.length > MAX_TITLE_LENGTH || clientBody.length > MAX_BODY_LENGTH) {
+      return jsonResponse({ error: "userId and supported notification data are required" }, 400);
     }
     if (JSON.stringify(data).length > 8000) return jsonResponse({ error: "Notification data is too large" }, 400);
 
+    const notificationType = stringValue(data.type);
+    const copy = notificationType ? notificationCopy(notificationType, data) : null;
+    if (!notificationType || !copy) {
+      return jsonResponse({ error: "Unsupported notification type" }, 400);
+    }
+    const title = copy.title;
+    const body = copy.body;
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
     const authorized = await authorizeNotification(adminClient, caller.id, userId, data);
     if (!authorized) {
       return jsonResponse({ error: "You are not authorized to send this notification" }, 403);
     }
 
-    const notificationType = stringValue(data.type)!;
-    const storedData: NotificationData = { ...data, actorUserId: caller.id };
+    const storedData = sanitizeNotificationData(data, caller.id);
 
     // Avoid duplicate sends caused by retries/double taps. The event is scoped to
     // the recipient and caller so independent participants can still receive it.
