@@ -235,7 +235,7 @@ class ProfileService {
 
       const { data: matchmaker, error: profileError } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, user_id, first_name, last_name, role, status, is_active, account_status')
         .eq('id', matchmakerId)
         .single();
       
