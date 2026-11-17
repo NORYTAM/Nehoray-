@@ -61,6 +61,12 @@ begin
     raise exception 'Profile identity fields cannot be changed' using errcode = '42501';
   end if;
 
+  if new.created_at is distinct from old.created_at then
+    raise exception 'Profile creation time cannot be changed' using errcode = '42501';
+  end if;
+  -- The database, not the client device clock, owns the modification timestamp.
+  new.updated_at := now();
+
   if new.approved_at is distinct from old.approved_at
      or new.account_status is distinct from old.account_status
      or new.suspension_reason is distinct from old.suspension_reason
@@ -130,6 +136,11 @@ begin
     or new.resume_url is distinct from old.resume_url
     or new.field_privacy is distinct from old.field_privacy
     or new.matchmaker_id is distinct from old.matchmaker_id;
+
+  if new.rejection_reason is distinct from old.rejection_reason
+     and not (old.status = 'rejected' and v_profile_changed and new.rejection_reason is null) then
+    raise exception 'Only an administrator can change the rejection reason' using errcode = '42501';
+  end if;
 
   if v_profile_changed and old.status in ('approved', 'rejected') then
     new.status := 'pending';
