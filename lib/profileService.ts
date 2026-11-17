@@ -418,13 +418,15 @@ class ProfileService {
           status: 'pending',
           matchmaker_id: matchmakerId,
         })
-        .select()
+        .select('id')
         .single();
 
       if (error) {
         console.error('Profile creation error:', error);
         return { success: false, error: error.message };
       }
+
+      const { data: createdProfile } = await supabase.rpc('get_my_profile');
 
       // Notify matchmaker if they were selected
       if (matchmakerId) {
@@ -471,7 +473,7 @@ class ProfileService {
         console.error('Failed to notify admins:', notifError);
       }
 
-      return { success: true, profile: data };
+      return { success: true, profile: createdProfile ?? ({ id: data.id } as Profile) };
     } catch (error) {
       console.error('Unexpected error:', error);
       return { success: false, error: 'An unexpected error occurred' };
@@ -489,11 +491,7 @@ class ProfileService {
         return { success: false, error: 'User not authenticated' };
       }
 
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('user_id', user.id)
-        .single();
+      const { data, error } = await supabase.rpc('get_my_profile');
 
       if (error) {
         if (error.code === 'PGRST116') {
@@ -559,11 +557,10 @@ class ProfileService {
       }
 
       // Get current profile to compare changes
-      const { data: currentProfile } = await supabase
-        .from('profiles')
-        .select('*, matchmaker_id')
-        .eq('user_id', user.id)
-        .single();
+      const { data: currentProfile, error: currentProfileError } = await supabase.rpc('get_my_profile');
+      if (currentProfileError || !currentProfile) {
+        return { success: false, error: currentProfileError?.message || 'Profile not found' };
+      }
 
       // Always set status to pending when profile is updated (for admin review)
       // This ensures any changes require admin approval before user can use the app
@@ -760,11 +757,7 @@ class ProfileService {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) return { success: false, error: 'User not authenticated' };
 
-      const { data: current, error: fetchError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('user_id', user.id)
-        .single();
+      const { data: current, error: fetchError } = await supabase.rpc('get_my_profile');
 
       if (fetchError || !current) return { success: false, error: 'Profile not found' };
 
