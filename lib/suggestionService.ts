@@ -29,7 +29,64 @@ export interface Suggestion {
   profile_two_middle_person?: Profile;
 }
 
+interface AuthorizedWorkflowContact {
+  profile_id: string;
+  first_name: string;
+  last_name: string;
+  phone?: string | null;
+  email?: string | null;
+  whatsapp?: string | null;
+  resume_url?: string | null;
+}
+
 class SuggestionService {
+  private async attachAuthorizedContacts(suggestions: Suggestion[]): Promise<Suggestion[]> {
+    return Promise.all(suggestions.map(async (suggestion) => {
+      if (
+        suggestion.profile_one_status !== 'accepted' ||
+        suggestion.profile_two_status !== 'accepted' ||
+        !suggestion.profile_one_continuation_choice ||
+        !suggestion.profile_two_continuation_choice
+      ) {
+        return suggestion;
+      }
+
+      const { data, error } = await supabase.rpc('get_workflow_contact_profiles', {
+        p_workflow_type: 'suggestion',
+        p_workflow_id: suggestion.id,
+      });
+      if (error) {
+        console.warn('Could not load authorized suggestion contacts:', error.message);
+        return suggestion;
+      }
+
+      const byProfileId = new Map<string, AuthorizedWorkflowContact>(
+        ((data ?? []) as AuthorizedWorkflowContact[]).map((contact) => [contact.profile_id, contact]),
+      );
+      const mergeContact = (profile: any): any => {
+        if (!profile?.id) return profile;
+        const contact = byProfileId.get(profile.id);
+        if (!contact) return profile;
+        return {
+          ...profile,
+          phone: contact.phone ?? undefined,
+          email: contact.email ?? undefined,
+          whatsapp: contact.whatsapp ?? undefined,
+          resume_url: contact.resume_url ?? undefined,
+          resumeUrl: contact.resume_url ?? undefined,
+        };
+      };
+
+      return {
+        ...suggestion,
+        profile_one: mergeContact(suggestion.profile_one),
+        profile_two: mergeContact(suggestion.profile_two),
+        profile_one_middle_person: mergeContact(suggestion.profile_one_middle_person),
+        profile_two_middle_person: mergeContact(suggestion.profile_two_middle_person),
+      };
+    }));
+  }
+
   /**
    * Check if two profiles were suggested before
    */
@@ -830,10 +887,10 @@ class SuggestionService {
             `
             *,
             suggester_profile:profiles!suggestions_suggester_id_fkey(id, first_name, last_name, dob, pictures, picture_privacy, gender, role),
-            profile_one:profiles!suggestions_profile_one_id_fkey(id, first_name, last_name, dob, pictures, picture_privacy, gender, phone, email, whatsapp, resume_url),
-            profile_two:profiles!suggestions_profile_two_id_fkey(id, first_name, last_name, dob, pictures, picture_privacy, gender, phone, email, whatsapp, resume_url),
-            profile_one_middle_person:profiles!suggestions_profile_one_middle_person_id_fkey(id, first_name, last_name, phone, email, whatsapp),
-            profile_two_middle_person:profiles!suggestions_profile_two_middle_person_id_fkey(id, first_name, last_name, phone, email, whatsapp)
+            profile_one:profiles!suggestions_profile_one_id_fkey(id, first_name, last_name, dob, pictures, picture_privacy, gender, role),
+            profile_two:profiles!suggestions_profile_two_id_fkey(id, first_name, last_name, dob, pictures, picture_privacy, gender, role),
+            profile_one_middle_person:profiles!suggestions_profile_one_middle_person_id_fkey(id, first_name, last_name),
+            profile_two_middle_person:profiles!suggestions_profile_two_middle_person_id_fkey(id, first_name, last_name)
           `,
           )
           .or(`profile_one_id.eq.${profile.id},profile_two_id.eq.${profile.id}`)
@@ -844,10 +901,10 @@ class SuggestionService {
             `
             *,
             suggester_profile:profiles!suggestions_suggester_id_fkey(id, first_name, last_name, dob, pictures, picture_privacy, gender, role),
-            profile_one:profiles!suggestions_profile_one_id_fkey(id, first_name, last_name, dob, pictures, picture_privacy, gender, phone, email, whatsapp, resume_url),
-            profile_two:profiles!suggestions_profile_two_id_fkey(id, first_name, last_name, dob, pictures, picture_privacy, gender, phone, email, whatsapp, resume_url),
-            profile_one_middle_person:profiles!suggestions_profile_one_middle_person_id_fkey(id, first_name, last_name, phone, email, whatsapp),
-            profile_two_middle_person:profiles!suggestions_profile_two_middle_person_id_fkey(id, first_name, last_name, phone, email, whatsapp)
+            profile_one:profiles!suggestions_profile_one_id_fkey(id, first_name, last_name, dob, pictures, picture_privacy, gender, role),
+            profile_two:profiles!suggestions_profile_two_id_fkey(id, first_name, last_name, dob, pictures, picture_privacy, gender, role),
+            profile_one_middle_person:profiles!suggestions_profile_one_middle_person_id_fkey(id, first_name, last_name),
+            profile_two_middle_person:profiles!suggestions_profile_two_middle_person_id_fkey(id, first_name, last_name)
           `,
           )
           .eq("suggester_id", profile.id)
@@ -867,8 +924,8 @@ class SuggestionService {
 
       return {
         success: true,
-        receivedSuggestions: received || [],
-        madeSuggestions: made || [],
+        receivedSuggestions: await this.attachAuthorizedContacts((received || []) as Suggestion[]),
+        madeSuggestions: await this.attachAuthorizedContacts((made || []) as Suggestion[]),
       };
     } catch (error: any) {
       console.error("Error in getMySuggestions:", error);
