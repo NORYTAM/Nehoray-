@@ -281,7 +281,10 @@ async function authorizeNotification(
         actor.id === profileId &&
         actor.role === "single" &&
         actor.matchmaker_id === recipient.id &&
-        active(actor) && active(recipient);
+        actor.is_active === true &&
+        (actor.account_status ?? "active") === "active" &&
+        ["pending", "approved"].includes(actor.status ?? "") &&
+        active(recipient);
     }
 
     case "suggestion": {
