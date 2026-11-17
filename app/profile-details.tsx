@@ -826,15 +826,24 @@ export default function ProfileDetailsScreen() {
   // approvedFields contains both camelCase privacy keys and snake_case DB column
   // names so either form will match correctly.
   const isFieldPrivate = (fieldName: string): boolean => {
-    if (profile?.field_privacy?.[fieldName] !== true) return false;
-    return !approvedFields.includes(fieldName);
+    const privacyKey = DB_COLUMN_TO_PRIVACY_KEY[fieldName] ?? fieldName;
+    const isPrivate = Boolean(
+      profile?.field_privacy?.[fieldName] || profile?.field_privacy?.[privacyKey],
+    );
+    const isApproved =
+      approvedFields.includes(fieldName) || approvedFields.includes(privacyKey);
+    return isPrivate && !isApproved;
   };
 
-  // Helper to check if a field has a value in the database (before privacy filtering)
+  // The privacy-filtered RPC returns null for private values. Keep the row
+  // visible as "Ask me" when its field flag is set, even though the value
+  // itself was intentionally omitted from the response.
   const hasFieldValue = (fieldName: string): boolean => {
-    if (!rawProfileData) return false;
-    const value = rawProfileData[fieldName];
-    return value !== null && value !== undefined && value !== "";
+    const value = rawProfileData?.[fieldName];
+    return (
+      (value !== null && value !== undefined && value !== "") ||
+      isFieldPrivate(fieldName)
+    );
   };
 
   // Helper component for rendering a detail row with "Ask me" button
@@ -1033,6 +1042,7 @@ export default function ProfileDetailsScreen() {
                 ? "Yes"
                 : "No"
               : null,
+            "has_children",
             "hasChildren",
           )}
         </View>
@@ -1083,17 +1093,17 @@ export default function ProfileDetailsScreen() {
         </View>
 
         {/* Hashkafa / Religious Outlook */}
-        {(profile.hashkafa_type ||
+        {(hasFieldValue("hashkafa_type") ||
           hasFieldValue("torah_learning") ||
           hasFieldValue("praying")) && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Religious Outlook ✡️</Text>
 
-            {profile.hashkafa_type && (
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Hashkafa:</Text>
-                <Text style={styles.detailValue}>{profile.hashkafa_type}</Text>
-              </View>
+            {renderDetailRow(
+              "Hashkafa",
+              profile.hashkafa_type,
+              "hashkafa_type",
+              "hashkafaType",
             )}
 
             {renderDetailRow(
@@ -1108,7 +1118,7 @@ export default function ProfileDetailsScreen() {
 
         {/* Education */}
         {(hasFieldValue("education_level") ||
-          profile.post_high_school_path) && (
+          hasFieldValue("post_high_school_path")) && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Education 🎓</Text>
 
@@ -1119,110 +1129,100 @@ export default function ProfileDetailsScreen() {
               "educationLevel",
             )}
 
-            {profile.post_high_school_path && (
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Post-High School Path:</Text>
-                <Text style={styles.detailValue}>
-                  {profile.post_high_school_path}
-                </Text>
-              </View>
+            {renderDetailRow(
+              "Post-High School Path",
+              profile.post_high_school_path,
+              "post_high_school_path",
+              "postHighSchoolPath",
             )}
           </View>
         )}
 
         {/* Occupation / Study */}
-        {profile.current_occupation_study && (
+        {hasFieldValue("current_occupation_study") && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Occupation / Study 💼</Text>
-
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Current Status:</Text>
-              <Text style={styles.detailValue}>
-                {profile.current_occupation_study}
-              </Text>
-            </View>
+            {renderDetailRow(
+              "Current Status",
+              profile.current_occupation_study,
+              "current_occupation_study",
+              "currentOccupationStudy",
+            )}
           </View>
         )}
 
         {/* Plan After Marriage */}
-        {profile.plan_after_marriage && (
+        {hasFieldValue("plan_after_marriage") && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Plan After Marriage 💍</Text>
-
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Plans:</Text>
-              <Text style={styles.detailValue}>
-                {profile.plan_after_marriage}
-              </Text>
-            </View>
+            {renderDetailRow(
+              "Plans",
+              profile.plan_after_marriage,
+              "plan_after_marriage",
+              "planAfterMarriage",
+            )}
           </View>
         )}
 
         {/* Marital Status */}
-        {profile.marital_status && (
+        {hasFieldValue("marital_status") && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Marital Status 💑</Text>
-
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Status:</Text>
-              <Text style={styles.detailValue}>{profile.marital_status}</Text>
-            </View>
+            {renderDetailRow(
+              "Status",
+              profile.marital_status,
+              "marital_status",
+              "maritalStatus",
+            )}
           </View>
         )}
 
         {/* Dress & Appearance */}
-        {(profile.dress_style ||
-          (profile.gender === "male" &&
-            profile.wears_black_hat !== undefined) ||
-          (profile.gender === "female" && profile.head_covering)) && (
+        {(hasFieldValue("dress_style") ||
+          (profile.gender === "male" && hasFieldValue("wears_black_hat")) ||
+          (profile.gender === "female" && hasFieldValue("head_covering"))) && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Dress & Appearance 👔</Text>
 
-            {profile.dress_style && (
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Dress Style:</Text>
-                <Text style={styles.detailValue}>{profile.dress_style}</Text>
-              </View>
+            {renderDetailRow(
+              "Dress Style",
+              profile.dress_style,
+              "dress_style",
+              "dressStyle",
             )}
 
             {profile.gender === "male" &&
-              profile.wears_black_hat !== undefined && (
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Black Hat:</Text>
-                  <Text style={styles.detailValue}>
-                    {profile.wears_black_hat ? "Yes" : "No"}
-                  </Text>
-                </View>
+              renderDetailRow(
+                "Black Hat",
+                profile.wears_black_hat !== undefined
+                  ? profile.wears_black_hat ? "Yes" : "No"
+                  : null,
+                "wears_black_hat",
+                "wearsBlackHat",
               )}
 
-            {profile.gender === "female" && profile.head_covering && (
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Head Covering:</Text>
-                <Text style={styles.detailValue}>{profile.head_covering}</Text>
-              </View>
-            )}
+            {profile.gender === "female" &&
+              renderDetailRow(
+                "Head Covering",
+                profile.head_covering,
+                "head_covering",
+                "headCovering",
+              )}
           </View>
         )}
 
         {/* Lifestyle */}
-        {(profile.smoking || profile.alcohol_consumption) && (
+        {(hasFieldValue("smoking") || hasFieldValue("alcohol_consumption")) && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Lifestyle 🌟</Text>
 
-            {profile.smoking && (
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Smoking:</Text>
-                <Text style={styles.detailValue}>{profile.smoking}</Text>
-              </View>
-            )}
+            {renderDetailRow("Smoking", profile.smoking, "smoking")}
 
-            {profile.alcohol_consumption && (
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Alcohol Consumption:</Text>
-                <Text style={styles.detailValue}>
-                  {profile.alcohol_consumption}
-                </Text>
-              </View>
+            {renderDetailRow(
+              "Alcohol Consumption",
+              profile.alcohol_consumption,
+              "alcohol_consumption",
+              "alcoholConsumption",
             )}
           </View>
         )}
