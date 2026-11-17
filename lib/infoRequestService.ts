@@ -63,22 +63,15 @@ class InfoRequestService {
         return { success: false, error: 'User profile not found' };
       }
 
-      // Create the info request
-      const { data, error } = await supabase
-        .from('info_requests')
-        .insert({
-          requester_id: profile.id,
-          requested_profile_id: requestedProfileId,
-          field_name: fieldName,
-          message: message,
-          status: 'pending'
-        })
-        .select()
-        .single();
+      const { data, error } = await supabase.rpc('create_info_request', {
+        p_requested_profile_id: requestedProfileId,
+        p_field_name: fieldName,
+        p_message: message,
+      });
 
-      if (error) {
+      if (error || !data) {
         console.error('Error creating info request:', error);
-        return { success: false, error: error.message };
+        return { success: false, error: error?.message || 'Could not create info request' };
       }
 
       // Send push notification to the requested profile owner
@@ -220,13 +213,10 @@ class InfoRequestService {
     status: 'approved' | 'rejected'
   ): Promise<{ success: boolean; error?: string }> {
     try {
-      const { error } = await supabase
-        .from('info_requests')
-        .update({
-          status: status,
-          responded_at: new Date().toISOString()
-        })
-        .eq('id', requestId);
+      const { error } = await supabase.rpc('respond_to_info_request', {
+        p_request_id: requestId,
+        p_status: status,
+      });
 
       if (error) {
         console.error('Error responding to request:', error);
