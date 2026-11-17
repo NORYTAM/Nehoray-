@@ -64,43 +64,15 @@ class IntroService {
         return { success: false, error: 'Profile not found' };
       }
 
-      // Check for existing active request
-      const { data: existing } = await supabase
-        .from('intro_requests')
-        .select('*')
-        .eq('requester_id', profile.id)
-        .eq('requested_profile_id', requestedProfileId)
-        .in('status', ['pending_matchmaker', 'pending_requested', 'accepted'])
-        .single();
+      const { data, error } = await supabase.rpc('create_intro_request', {
+        p_requested_profile_id: requestedProfileId,
+        p_matchmaker_id: matchmakerId,
+        p_requester_continuation_choice: requesterContinuationChoice ?? null,
+      });
 
-      if (existing) {
-        return { success: false, error: 'An intro request already exists for this profile' };
-      }
-
-      // Create the intro request with new flow
-      const insertData: any = {
-        requester_id: profile.id,
-        requested_profile_id: requestedProfileId,
-        requester_middle_person_id: matchmakerId,
-        status: 'pending_matchmaker',
-        matchmaker_status: 'pending',
-        requested_status: 'pending',
-      };
-
-      // Add requester's continuation choice if provided
-      if (requesterContinuationChoice) {
-        insertData.requester_continuation_choice = requesterContinuationChoice;
-      }
-
-      const { data, error } = await supabase
-        .from('intro_requests')
-        .insert(insertData)
-        .select()
-        .single();
-
-      if (error) {
+      if (error || !data) {
         console.error('Error creating intro request:', error);
-        return { success: false, error: error.message };
+        return { success: false, error: error?.message || 'Could not create intro request' };
       }
 
       // Fetch profile information for notifications
@@ -176,33 +148,12 @@ class IntroService {
         return { success: false, error: 'You are not the matchmaker for this request' };
       }
 
-      const now = new Date().toISOString();
-      const updateData: any = {
-        matchmaker_status: response,
-        matchmaker_responded_at: now,
-        updated_at: now,
-      };
-
-      if (noteToRequester) {
-        updateData.matchmaker_note_to_requester = noteToRequester;
-      }
-
-      if (noteToRequested) {
-        updateData.matchmaker_note_to_requested = noteToRequested;
-      }
-
-      if (response === 'accepted') {
-        // Matchmaker accepted, move to next step: pending_requested
-        updateData.status = 'pending_requested';
-      } else {
-        // Matchmaker rejected, mark overall status as rejected
-        updateData.status = 'rejected';
-      }
-
-      const { error } = await supabase
-        .from('intro_requests')
-        .update(updateData)
-        .eq('id', requestId);
+      const { error } = await supabase.rpc('matchmaker_respond_to_intro_request', {
+        p_request_id: requestId,
+        p_response: response,
+        p_note_to_requester: noteToRequester ?? null,
+        p_note_to_requested: noteToRequested ?? null,
+      });
 
       if (error) {
         console.error('Error updating request:', error);
@@ -290,29 +241,11 @@ class IntroService {
         return { success: false, error: 'This request is not for you' };
       }
 
-      const now = new Date().toISOString();
-      const updateData: any = {
-        requested_status: response,
-        requested_responded_at: now,
-        updated_at: now,
-      };
-
-      if (noteToMatchmaker) {
-        updateData.requested_note_to_matchmaker = noteToMatchmaker;
-      }
-
-      if (response === 'accepted') {
-        // Both matchmaker and requested accepted, move to accepted status
-        updateData.status = 'accepted';
-      } else {
-        // Requested person rejected, mark overall status as rejected
-        updateData.status = 'rejected';
-      }
-
-      const { error } = await supabase
-        .from('intro_requests')
-        .update(updateData)
-        .eq('id', requestId);
+      const { error } = await supabase.rpc('requested_person_respond_to_intro_request', {
+        p_request_id: requestId,
+        p_response: response,
+        p_note_to_matchmaker: noteToMatchmaker ?? null,
+      });
 
       if (error) {
         console.error('Error updating request:', error);
@@ -413,40 +346,12 @@ class IntroService {
         return { success: false, error: 'This request is not for you' };
       }
 
-      const now = new Date().toISOString();
-      const updateData: any = {
-        requested_status: 'accepted',
-        requested_responded_at: now,
-        status: 'accepted',
-        requested_continuation_choice: choice,
-        updated_at: now,
-      };
-
-      if (noteToMatchmaker) updateData.requested_note_to_matchmaker = noteToMatchmaker;
-
-      // If either party wants a matchmaker, both use the matchmaker
-      if (choice === 'with_middle_person') {
-        if (matchmakerId) updateData.requested_middle_person_id = matchmakerId;
-        updateData.requester_continuation_choice = 'with_middle_person';
-      }
-
-      // If requester already chose with_middle_person, honour that
-      if (request.requester_continuation_choice === 'with_middle_person') {
-        updateData.requested_continuation_choice = 'with_middle_person';
-        if (matchmakerId) updateData.requested_middle_person_id = matchmakerId;
-      }
-
-      // Check if both choices are now set → move to completed
-      const finalRequestedChoice = updateData.requested_continuation_choice;
-      const finalRequesterChoice = updateData.requester_continuation_choice ?? request.requester_continuation_choice;
-      if (finalRequestedChoice && finalRequesterChoice) {
-        updateData.status = 'completed';
-      }
-
-      const { error } = await supabase
-        .from('intro_requests')
-        .update(updateData)
-        .eq('id', requestId);
+      const { error } = await supabase.rpc('accept_intro_with_continuation', {
+        p_request_id: requestId,
+        p_choice: choice,
+        p_matchmaker_id: matchmakerId ?? null,
+        p_note_to_matchmaker: noteToMatchmaker ?? null,
+      });
 
       if (error) return { success: false, error: error.message };
 
@@ -534,44 +439,11 @@ class IntroService {
         return { success: false, error: 'You are not part of this request' };
       }
 
-      const updateData: any = {
-        updated_at: new Date().toISOString(),
-      };
-
-      if (isRequester) {
-        updateData.requester_continuation_choice = choice;
-        
-        // If requester chooses with_middle_person, set it for both
-        if (choice === 'with_middle_person') {
-          updateData.requested_continuation_choice = 'with_middle_person';
-          if (middlePersonId) {
-            updateData.requested_middle_person_id = middlePersonId;
-          }
-        }
-      } else {
-        updateData.requested_continuation_choice = choice;
-        if (middlePersonId) {
-          updateData.requested_middle_person_id = middlePersonId;
-        }
-        
-        // If requested chooses with_middle_person, set it for both
-        if (choice === 'with_middle_person') {
-          updateData.requester_continuation_choice = 'with_middle_person';
-        }
-      }
-
-      // Check if both have made their continuation choices
-      const requesterChoice = isRequester ? choice : request.requester_continuation_choice;
-      const requestedChoice = isRequested ? choice : request.requested_continuation_choice;
-
-      if (requesterChoice && requestedChoice) {
-        updateData.status = 'completed';
-      }
-
-      const { error } = await supabase
-        .from('intro_requests')
-        .update(updateData)
-        .eq('id', requestId);
+      const { error } = await supabase.rpc('set_intro_continuation_choice', {
+        p_request_id: requestId,
+        p_choice: choice,
+        p_matchmaker_id: middlePersonId ?? null,
+      });
 
       if (error) {
         console.error('Error setting continuation choice:', error);
