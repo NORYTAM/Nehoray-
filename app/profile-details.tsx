@@ -28,7 +28,7 @@ import ProfileGridSelectionModal from "../components/suggestion/ProfileGridSelec
 import { useProfileShare } from "../hooks/useProfileShare";
 import { useViewedPictureIds } from "../hooks/useViewedPictureIds";
 import { useAuth } from "../lib/AuthContext";
-import { PRIVACY_KEY_TO_DB_COLUMN } from "../lib/fieldLabels";
+import { DB_COLUMN_TO_PRIVACY_KEY, PRIVACY_KEY_TO_DB_COLUMN } from "../lib/fieldLabels";
 import { infoRequestService } from "../lib/infoRequestService";
 import { introService } from "../lib/introService";
 import { pictureViewService } from "../lib/pictureViewService";
@@ -129,9 +129,15 @@ async function fetchProfileDetails(profileId: string) {
 
   const shouldShowField = (privacyFieldName: string, dbFieldName?: string) => {
     const dbField = dbFieldName || privacyFieldName;
-    return (
-      !fieldPrivacy[privacyFieldName] || currentApprovedFields.has(dbField)
+    const alternatePrivacyKey =
+      DB_COLUMN_TO_PRIVACY_KEY[privacyFieldName] ??
+      DB_COLUMN_TO_PRIVACY_KEY[dbField];
+    const isPrivate = Boolean(
+      fieldPrivacy[privacyFieldName] ||
+      fieldPrivacy[dbField] ||
+      (alternatePrivacyKey && fieldPrivacy[alternatePrivacyKey])
     );
+    return !isPrivate || currentApprovedFields.has(dbField);
   };
 
   // One-time picture view status
