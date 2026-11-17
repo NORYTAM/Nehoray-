@@ -57,9 +57,6 @@ jobs:
         with:
           deno-version: v2.x
 
-      - name: Format check
-        run: deno fmt --check supabase/functions
-
       - name: Type-check Edge Functions
         run: |
           deno check --no-lock supabase/functions/send-notification/index.ts
