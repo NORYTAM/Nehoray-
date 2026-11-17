@@ -264,7 +264,9 @@ export default function MadeSuggestionCard({
       </View>
 
       {/* Contact info for facilitation — visible when either person chose with_middle_person */}
-      {anyNeedsFacilitation && (
+      {anyNeedsFacilitation &&
+        (profileOne.phone || profileOne.email || profileOne.whatsapp ||
+          profileTwo.phone || profileTwo.email || profileTwo.whatsapp) && (
         <View style={styles.facilitateSection}>
           <TouchableOpacity
             style={styles.facilitateHeader}
