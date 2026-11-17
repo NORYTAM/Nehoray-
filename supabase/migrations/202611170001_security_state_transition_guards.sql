@@ -1066,25 +1066,25 @@ begin
     v_target.dob := case when coalesce(v_target.field_privacy ->> 'dob', 'false') = 'true' then null else v_target.dob end;
     v_target.what_looking_for := case when coalesce(v_target.field_privacy ->> 'what_looking_for', 'false') = 'true' then null else v_target.what_looking_for end;
     v_target.height := case when coalesce(v_target.field_privacy ->> 'height', 'false') = 'true' then null else v_target.height end;
-    v_target.location_city := case when coalesce(v_target.field_privacy ->> 'location_city', 'false') = 'true' then null else v_target.location_city end;
-    v_target.location_state := case when coalesce(v_target.field_privacy ->> 'location_state', 'false') = 'true' then null else v_target.location_state end;
-    v_target.location_country := case when coalesce(v_target.field_privacy ->> 'location_country', 'false') = 'true' then null else v_target.location_country end;
+    v_target.location_city := case when coalesce(v_target.field_privacy ->> 'location', v_target.field_privacy ->> 'location_city', 'false') = 'true' then null else v_target.location_city end;
+    v_target.location_state := case when coalesce(v_target.field_privacy ->> 'location', v_target.field_privacy ->> 'location_state', 'false') = 'true' then null else v_target.location_state end;
+    v_target.location_country := case when coalesce(v_target.field_privacy ->> 'location', v_target.field_privacy ->> 'location_country', 'false') = 'true' then null else v_target.location_country end;
     v_target.languages := case when coalesce(v_target.field_privacy ->> 'languages', 'false') = 'true' then null else v_target.languages end;
     v_target.nationality := case when coalesce(v_target.field_privacy ->> 'nationality', 'false') = 'true' then null else v_target.nationality end;
-    v_target.is_cohen := case when coalesce(v_target.field_privacy ->> 'is_cohen', 'false') = 'true' then null else v_target.is_cohen end;
-    v_target.hashkafa_type := case when coalesce(v_target.field_privacy ->> 'hashkafa_type', 'false') = 'true' then null else v_target.hashkafa_type end;
+    v_target.is_cohen := case when coalesce(v_target.field_privacy ->> 'isCohen', v_target.field_privacy ->> 'is_cohen', 'false') = 'true' then null else v_target.is_cohen end;
+    v_target.hashkafa_type := case when coalesce(v_target.field_privacy ->> 'hashkafaType', v_target.field_privacy ->> 'hashkafa_type', 'false') = 'true' then null else v_target.hashkafa_type end;
     v_target.torah_learning := case when coalesce(v_target.field_privacy ->> 'torahLearning', v_target.field_privacy ->> 'torah_learning', 'false') = 'true' then null else v_target.torah_learning end;
     v_target.praying := case when coalesce(v_target.field_privacy ->> 'praying', 'false') = 'true' then null else v_target.praying end;
     v_target.education_level := case when coalesce(v_target.field_privacy ->> 'educationLevel', v_target.field_privacy ->> 'education_level', 'false') = 'true' then null else v_target.education_level end;
-    v_target.post_high_school_path := case when coalesce(v_target.field_privacy ->> 'post_high_school_path', 'false') = 'true' then null else v_target.post_high_school_path end;
-    v_target.current_occupation_study := case when coalesce(v_target.field_privacy ->> 'current_occupation_study', 'false') = 'true' then null else v_target.current_occupation_study end;
-    v_target.plan_after_marriage := case when coalesce(v_target.field_privacy ->> 'plan_after_marriage', 'false') = 'true' then null else v_target.plan_after_marriage end;
-    v_target.marital_status := case when coalesce(v_target.field_privacy ->> 'marital_status', 'false') = 'true' then null else v_target.marital_status end;
-    v_target.dress_style := case when coalesce(v_target.field_privacy ->> 'dress_style', 'false') = 'true' then null else v_target.dress_style end;
-    v_target.wears_black_hat := case when coalesce(v_target.field_privacy ->> 'wears_black_hat', 'false') = 'true' then null else v_target.wears_black_hat end;
-    v_target.head_covering := case when coalesce(v_target.field_privacy ->> 'head_covering', 'false') = 'true' then null else v_target.head_covering end;
+    v_target.post_high_school_path := case when coalesce(v_target.field_privacy ->> 'postHighSchoolPath', v_target.field_privacy ->> 'post_high_school_path', 'false') = 'true' then null else v_target.post_high_school_path end;
+    v_target.current_occupation_study := case when coalesce(v_target.field_privacy ->> 'currentOccupationStudy', v_target.field_privacy ->> 'current_occupation_study', 'false') = 'true' then null else v_target.current_occupation_study end;
+    v_target.plan_after_marriage := case when coalesce(v_target.field_privacy ->> 'planAfterMarriage', v_target.field_privacy ->> 'plan_after_marriage', 'false') = 'true' then null else v_target.plan_after_marriage end;
+    v_target.marital_status := case when coalesce(v_target.field_privacy ->> 'maritalStatus', v_target.field_privacy ->> 'marital_status', 'false') = 'true' then null else v_target.marital_status end;
+    v_target.dress_style := case when coalesce(v_target.field_privacy ->> 'dressStyle', v_target.field_privacy ->> 'dress_style', 'false') = 'true' then null else v_target.dress_style end;
+    v_target.wears_black_hat := case when coalesce(v_target.field_privacy ->> 'wearsBlackHat', v_target.field_privacy ->> 'wears_black_hat', 'false') = 'true' then null else v_target.wears_black_hat end;
+    v_target.head_covering := case when coalesce(v_target.field_privacy ->> 'headCovering', v_target.field_privacy ->> 'head_covering', 'false') = 'true' then null else v_target.head_covering end;
     v_target.smoking := case when coalesce(v_target.field_privacy ->> 'smoking', 'false') = 'true' then null else v_target.smoking end;
-    v_target.alcohol_consumption := case when coalesce(v_target.field_privacy ->> 'alcohol_consumption', 'false') = 'true' then null else v_target.alcohol_consumption end;
+    v_target.alcohol_consumption := case when coalesce(v_target.field_privacy ->> 'alcoholConsumption', v_target.field_privacy ->> 'alcohol_consumption', 'false') = 'true' then null else v_target.alcohol_consumption end;
     v_target.phone := case when coalesce(v_target.field_privacy ->> 'phone', 'false') = 'true' then null else v_target.phone end;
     v_target.email := case when coalesce(v_target.field_privacy ->> 'email', 'false') = 'true' then null else v_target.email end;
     v_target.whatsapp := case when coalesce(v_target.field_privacy ->> 'whatsapp', 'false') = 'true' then null else v_target.whatsapp end;
@@ -1105,15 +1105,15 @@ begin
      and not ('height' = any(v_approved_fields)) then
     v_target.height := null;
   end if;
-  if coalesce(v_target.field_privacy ->> 'location_city', 'false') = 'true'
+  if coalesce(v_target.field_privacy ->> 'location', v_target.field_privacy ->> 'location_city', 'false') = 'true'
      and not ('location_city' = any(v_approved_fields)) then
     v_target.location_city := null;
   end if;
-  if coalesce(v_target.field_privacy ->> 'location_state', 'false') = 'true'
+  if coalesce(v_target.field_privacy ->> 'location', v_target.field_privacy ->> 'location_state', 'false') = 'true'
      and not ('location_state' = any(v_approved_fields)) then
     v_target.location_state := null;
   end if;
-  if coalesce(v_target.field_privacy ->> 'location_country', 'false') = 'true'
+  if coalesce(v_target.field_privacy ->> 'location', v_target.field_privacy ->> 'location_country', 'false') = 'true'
      and not ('location_country' = any(v_approved_fields)) then
     v_target.location_country := null;
   end if;
@@ -1125,11 +1125,11 @@ begin
      and not ('nationality' = any(v_approved_fields)) then
     v_target.nationality := null;
   end if;
-  if coalesce(v_target.field_privacy ->> 'is_cohen', 'false') = 'true'
+  if coalesce(v_target.field_privacy ->> 'isCohen', v_target.field_privacy ->> 'is_cohen', 'false') = 'true'
      and not ('is_cohen' = any(v_approved_fields)) then
     v_target.is_cohen := null;
   end if;
-  if coalesce(v_target.field_privacy ->> 'hashkafa_type', 'false') = 'true'
+  if coalesce(v_target.field_privacy ->> 'hashkafaType', v_target.field_privacy ->> 'hashkafa_type', 'false') = 'true'
      and not ('hashkafa_type' = any(v_approved_fields)) then
     v_target.hashkafa_type := null;
   end if;
@@ -1145,31 +1145,31 @@ begin
      and not (v_approved_fields && array['educationLevel', 'education_level']::text[]) then
     v_target.education_level := null;
   end if;
-  if coalesce(v_target.field_privacy ->> 'post_high_school_path', 'false') = 'true'
+  if coalesce(v_target.field_privacy ->> 'postHighSchoolPath', v_target.field_privacy ->> 'post_high_school_path', 'false') = 'true'
      and not ('post_high_school_path' = any(v_approved_fields)) then
     v_target.post_high_school_path := null;
   end if;
-  if coalesce(v_target.field_privacy ->> 'current_occupation_study', 'false') = 'true'
+  if coalesce(v_target.field_privacy ->> 'currentOccupationStudy', v_target.field_privacy ->> 'current_occupation_study', 'false') = 'true'
      and not ('current_occupation_study' = any(v_approved_fields)) then
     v_target.current_occupation_study := null;
   end if;
-  if coalesce(v_target.field_privacy ->> 'plan_after_marriage', 'false') = 'true'
+  if coalesce(v_target.field_privacy ->> 'planAfterMarriage', v_target.field_privacy ->> 'plan_after_marriage', 'false') = 'true'
      and not ('plan_after_marriage' = any(v_approved_fields)) then
     v_target.plan_after_marriage := null;
   end if;
-  if coalesce(v_target.field_privacy ->> 'marital_status', 'false') = 'true'
+  if coalesce(v_target.field_privacy ->> 'maritalStatus', v_target.field_privacy ->> 'marital_status', 'false') = 'true'
      and not ('marital_status' = any(v_approved_fields)) then
     v_target.marital_status := null;
   end if;
-  if coalesce(v_target.field_privacy ->> 'dress_style', 'false') = 'true'
+  if coalesce(v_target.field_privacy ->> 'dressStyle', v_target.field_privacy ->> 'dress_style', 'false') = 'true'
      and not ('dress_style' = any(v_approved_fields)) then
     v_target.dress_style := null;
   end if;
-  if coalesce(v_target.field_privacy ->> 'wears_black_hat', 'false') = 'true'
+  if coalesce(v_target.field_privacy ->> 'wearsBlackHat', v_target.field_privacy ->> 'wears_black_hat', 'false') = 'true'
      and not ('wears_black_hat' = any(v_approved_fields)) then
     v_target.wears_black_hat := null;
   end if;
-  if coalesce(v_target.field_privacy ->> 'head_covering', 'false') = 'true'
+  if coalesce(v_target.field_privacy ->> 'headCovering', v_target.field_privacy ->> 'head_covering', 'false') = 'true'
      and not ('head_covering' = any(v_approved_fields)) then
     v_target.head_covering := null;
   end if;
@@ -1177,7 +1177,7 @@ begin
      and not ('smoking' = any(v_approved_fields)) then
     v_target.smoking := null;
   end if;
-  if coalesce(v_target.field_privacy ->> 'alcohol_consumption', 'false') = 'true'
+  if coalesce(v_target.field_privacy ->> 'alcoholConsumption', v_target.field_privacy ->> 'alcohol_consumption', 'false') = 'true'
      and not ('alcohol_consumption' = any(v_approved_fields)) then
     v_target.alcohol_consumption := null;
   end if;
