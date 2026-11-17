@@ -1283,4 +1283,196 @@ revoke all on function public.get_directory_profiles() from public, anon;
 grant execute on function public.get_profile_for_viewer(uuid) to authenticated;
 grant execute on function public.get_directory_profiles() to authenticated;
 
+
+-- Return contact details only to participants or the selected matchmaker and
+-- only after both parties accepted and completed their continuation choices.
+create or replace function public.get_workflow_contact_profiles(
+  p_workflow_type text,
+  p_workflow_id uuid
+)
+returns table(
+  profile_id uuid,
+  first_name text,
+  last_name text,
+  phone text,
+  email text,
+  whatsapp text,
+  resume_url text
+)
+language plpgsql
+security definer
+set search_path = public, pg_temp
+set row_security = off
+as $$
+declare
+  v_viewer_profile_id uuid;
+  v_intro public.intro_requests%rowtype;
+  v_suggestion public.suggestions%rowtype;
+  v_contact_id uuid;
+  v_is_with_matchmaker boolean;
+  v_one_with_matchmaker boolean;
+  v_two_with_matchmaker boolean;
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required' using errcode = '42501';
+  end if;
+
+  select p.id into v_viewer_profile_id
+  from public.profiles p
+  where p.user_id = auth.uid();
+
+  if v_viewer_profile_id is null then
+    raise exception 'Profile not found';
+  end if;
+
+  if p_workflow_type = 'intro' then
+    select * into v_intro
+    from public.intro_requests r
+    where r.id = p_workflow_id;
+
+    if not found
+       or v_intro.status <> 'completed'
+       or v_intro.matchmaker_status <> 'accepted'
+       or v_intro.requested_status <> 'accepted'
+       or v_intro.requester_continuation_choice is null
+       or v_intro.requested_continuation_choice is null then
+      return;
+    end if;
+
+    v_is_with_matchmaker :=
+      v_intro.requester_continuation_choice = 'with_middle_person'
+      or v_intro.requested_continuation_choice = 'with_middle_person';
+
+    if v_is_with_matchmaker then
+      v_contact_id := coalesce(v_intro.requested_middle_person_id, v_intro.requester_middle_person_id);
+      if v_contact_id is null then
+        return;
+      end if;
+
+      -- The participants may see the selected matchmaker's contact details.
+      if v_viewer_profile_id in (v_intro.requester_id, v_intro.requested_profile_id) then
+        return query
+          select p.id, p.first_name, p.last_name, p.phone, p.email, p.whatsapp, p.resume_url
+          from public.profiles p
+          where p.id = v_contact_id;
+        return;
+      end if;
+
+      -- Only the selected matchmaker may see both participants' contact details.
+      if v_viewer_profile_id = v_contact_id then
+        return query
+          select p.id, p.first_name, p.last_name, p.phone, p.email, p.whatsapp, p.resume_url
+          from public.profiles p
+          where p.id in (v_intro.requester_id, v_intro.requested_profile_id)
+          order by case when p.id = v_intro.requester_id then 0 else 1 end;
+        return;
+      end if;
+
+      return;
+    end if;
+
+    -- Direct contact is available only when both selected to continue directly.
+    if v_intro.requester_continuation_choice = 'by_themselves'
+       and v_intro.requested_continuation_choice = 'by_themselves' then
+      if v_viewer_profile_id = v_intro.requester_id then
+        v_contact_id := v_intro.requested_profile_id;
+      elsif v_viewer_profile_id = v_intro.requested_profile_id then
+        v_contact_id := v_intro.requester_id;
+      else
+        return;
+      end if;
+
+      return query
+        select p.id, p.first_name, p.last_name, p.phone, p.email, p.whatsapp, p.resume_url
+        from public.profiles p
+        where p.id = v_contact_id;
+      return;
+    end if;
+
+    return;
+  elsif p_workflow_type = 'suggestion' then
+    select * into v_suggestion
+    from public.suggestions s
+    where s.id = p_workflow_id;
+
+    if not found
+       or v_suggestion.status <> 'completed'
+       or v_suggestion.profile_one_status <> 'accepted'
+       or v_suggestion.profile_two_status <> 'accepted'
+       or v_suggestion.profile_one_continuation_choice is null
+       or v_suggestion.profile_two_continuation_choice is null then
+      return;
+    end if;
+
+    v_one_with_matchmaker := v_suggestion.profile_one_continuation_choice = 'with_middle_person';
+    v_two_with_matchmaker := v_suggestion.profile_two_continuation_choice = 'with_middle_person';
+    v_is_with_matchmaker := v_one_with_matchmaker or v_two_with_matchmaker;
+
+    if v_is_with_matchmaker then
+      -- A participant sees the chosen matchmaker that will facilitate the match.
+      if v_viewer_profile_id = v_suggestion.profile_one_id
+         or v_viewer_profile_id = v_suggestion.profile_two_id then
+        if v_one_with_matchmaker and v_two_with_matchmaker then
+          v_contact_id := case
+            when v_viewer_profile_id = v_suggestion.profile_one_id then v_suggestion.profile_one_middle_person_id
+            else v_suggestion.profile_two_middle_person_id
+          end;
+        elsif v_one_with_matchmaker then
+          v_contact_id := v_suggestion.profile_one_middle_person_id;
+        else
+          v_contact_id := v_suggestion.profile_two_middle_person_id;
+        end if;
+
+        if v_contact_id is null then return; end if;
+
+        return query
+          select p.id, p.first_name, p.last_name, p.phone, p.email, p.whatsapp, p.resume_url
+          from public.profiles p
+          where p.id = v_contact_id;
+        return;
+      end if;
+
+      -- The selected shadchan may see both participants, but the suggester
+      -- cannot see their contact details unless they were actually selected.
+      if (v_one_with_matchmaker and v_viewer_profile_id = v_suggestion.profile_one_middle_person_id)
+         or (v_two_with_matchmaker and v_viewer_profile_id = v_suggestion.profile_two_middle_person_id) then
+        return query
+          select p.id, p.first_name, p.last_name, p.phone, p.email, p.whatsapp, p.resume_url
+          from public.profiles p
+          where p.id in (v_suggestion.profile_one_id, v_suggestion.profile_two_id)
+          order by case when p.id = v_suggestion.profile_one_id then 0 else 1 end;
+        return;
+      end if;
+
+      return;
+    end if;
+
+    -- Both participants chose to continue directly.
+    if v_suggestion.profile_one_continuation_choice = 'by_themselves'
+       and v_suggestion.profile_two_continuation_choice = 'by_themselves' then
+      if v_viewer_profile_id = v_suggestion.profile_one_id then
+        v_contact_id := v_suggestion.profile_two_id;
+      elsif v_viewer_profile_id = v_suggestion.profile_two_id then
+        v_contact_id := v_suggestion.profile_one_id;
+      else
+        return;
+      end if;
+
+      return query
+        select p.id, p.first_name, p.last_name, p.phone, p.email, p.whatsapp, p.resume_url
+        from public.profiles p
+        where p.id = v_contact_id;
+      return;
+    end if;
+
+    return;
+  else
+    raise exception 'Unsupported workflow type';
+  end if;
+end;
+$$;
+
+revoke all on function public.get_workflow_contact_profiles(text, uuid) from public, anon;
+grant execute on function public.get_workflow_contact_profiles(text, uuid) to authenticated;
+
 commit;
