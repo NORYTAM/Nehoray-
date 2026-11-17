@@ -1,7 +1,17 @@
 import { notificationService } from './notificationService';
 import { supabase } from './supabase';
 
-export interface IntroRequest {
+export interface AuthorizedWorkflowContact {
+  profile_id: string;
+  first_name: string;
+  last_name: string;
+  phone?: string | null;
+  email?: string | null;
+  whatsapp?: string | null;
+  resume_url?: string | null;
+}
+
+interface IntroRequest {
   id: string;
   requester_id: string;
   requested_profile_id: string;
@@ -38,6 +48,53 @@ export interface IntroRequest {
 }
 
 class IntroService {
+  private async attachAuthorizedContacts(requests: IntroRequest[]): Promise<IntroRequest[]> {
+    return Promise.all(requests.map(async (request) => {
+      if (
+        request.matchmaker_status !== 'accepted' ||
+        request.requested_status !== 'accepted' ||
+        !request.requester_continuation_choice ||
+        !request.requested_continuation_choice
+      ) {
+        return request;
+      }
+
+      const { data, error } = await supabase.rpc('get_workflow_contact_profiles', {
+        p_workflow_type: 'intro',
+        p_workflow_id: request.id,
+      });
+      if (error) {
+        console.warn('Could not load authorized intro contacts:', error.message);
+        return request;
+      }
+
+      const byProfileId = new Map<string, AuthorizedWorkflowContact>(
+        ((data ?? []) as AuthorizedWorkflowContact[]).map((contact) => [contact.profile_id, contact]),
+      );
+      const mergeContact = (profile: any): any => {
+        if (!profile?.id) return profile;
+        const contact = byProfileId.get(profile.id);
+        if (!contact) return profile;
+        return {
+          ...profile,
+          phone: contact.phone ?? undefined,
+          email: contact.email ?? undefined,
+          whatsapp: contact.whatsapp ?? undefined,
+          resume_url: contact.resume_url ?? undefined,
+          resumeUrl: contact.resume_url ?? undefined,
+        };
+      };
+
+      return {
+        ...request,
+        requester_profile: mergeContact(request.requester_profile),
+        requested_profile: mergeContact(request.requested_profile),
+        requester_middle_person: mergeContact(request.requester_middle_person),
+        requested_middle_person: mergeContact(request.requested_middle_person),
+      };
+    }));
+  }
+
   /**
    * NEW FLOW Step 1: Create intro request (goes to matchmaker first)
    * Example: Ori asks for intro to Shimon, selects Ben as matchmaker
@@ -523,10 +580,10 @@ class IntroService {
           .from('intro_requests')
           .select(`
             *,
-            requester_profile:profiles!intro_requests_requester_id_fkey(id, first_name, last_name, dob, pictures, picture_privacy, gender, phone, email, whatsapp, resume_url),
-            requested_profile:profiles!intro_requests_requested_profile_id_fkey(id, first_name, last_name, dob, pictures, picture_privacy, gender, phone, email, whatsapp, resume_url),
-            requester_middle_person:profiles!intro_requests_requester_middle_person_id_fkey(id, first_name, last_name, phone, email, whatsapp),
-            requested_middle_person:profiles!intro_requests_requested_middle_person_id_fkey(id, first_name, last_name, phone, email, whatsapp)
+            requester_profile:profiles!intro_requests_requester_id_fkey(id, first_name, last_name, dob, pictures, picture_privacy, gender, role),
+            requested_profile:profiles!intro_requests_requested_profile_id_fkey(id, first_name, last_name, dob, pictures, picture_privacy, gender, role),
+            requester_middle_person:profiles!intro_requests_requester_middle_person_id_fkey(id, first_name, last_name),
+            requested_middle_person:profiles!intro_requests_requested_middle_person_id_fkey(id, first_name, last_name)
           `)
           .eq('requester_id', profile.id)
           .order('created_at', { ascending: false }),
@@ -534,10 +591,10 @@ class IntroService {
           .from('intro_requests')
           .select(`
             *,
-            requester_profile:profiles!intro_requests_requester_id_fkey(id, first_name, last_name, dob, pictures, picture_privacy, gender, phone, email, whatsapp, resume_url),
-            requested_profile:profiles!intro_requests_requested_profile_id_fkey(id, first_name, last_name, dob, pictures, picture_privacy, gender, phone, email, whatsapp, resume_url),
-            requester_middle_person:profiles!intro_requests_requester_middle_person_id_fkey(id, first_name, last_name, phone, email, whatsapp),
-            requested_middle_person:profiles!intro_requests_requested_middle_person_id_fkey(id, first_name, last_name, phone, email, whatsapp)
+            requester_profile:profiles!intro_requests_requester_id_fkey(id, first_name, last_name, dob, pictures, picture_privacy, gender, role),
+            requested_profile:profiles!intro_requests_requested_profile_id_fkey(id, first_name, last_name, dob, pictures, picture_privacy, gender, role),
+            requester_middle_person:profiles!intro_requests_requester_middle_person_id_fkey(id, first_name, last_name),
+            requested_middle_person:profiles!intro_requests_requested_middle_person_id_fkey(id, first_name, last_name)
           `)
           .eq('requested_profile_id', profile.id)
           // Only show to requested person after matchmaker has accepted
@@ -552,8 +609,8 @@ class IntroService {
 
       return {
         success: true,
-        sentRequests: sentQuery.data || [],
-        receivedRequests: receivedQuery.data || [],
+        sentRequests: await this.attachAuthorizedContacts((sentQuery.data || []) as IntroRequest[]),
+        receivedRequests: await this.attachAuthorizedContacts((receivedQuery.data || []) as IntroRequest[]),
       };
     } catch (error: any) {
       console.error('Error in getMyIntroRequests:', error);
@@ -589,10 +646,10 @@ class IntroService {
         .from('intro_requests')
         .select(`
           *,
-          requester_profile:profiles!intro_requests_requester_id_fkey(id, first_name, last_name, dob, pictures, picture_privacy, gender, phone, email, whatsapp),
-          requested_profile:profiles!intro_requests_requested_profile_id_fkey(id, first_name, last_name, dob, pictures, picture_privacy, gender, phone, email, whatsapp, resume_url),
-          requester_middle_person:profiles!intro_requests_requester_middle_person_id_fkey(id, first_name, last_name, phone, email, whatsapp),
-          requested_middle_person:profiles!intro_requests_requested_middle_person_id_fkey(id, first_name, last_name, phone, email, whatsapp)
+          requester_profile:profiles!intro_requests_requester_id_fkey(id, first_name, last_name, dob, pictures, picture_privacy, gender, role),
+          requested_profile:profiles!intro_requests_requested_profile_id_fkey(id, first_name, last_name, dob, pictures, picture_privacy, gender, role),
+          requester_middle_person:profiles!intro_requests_requester_middle_person_id_fkey(id, first_name, last_name),
+          requested_middle_person:profiles!intro_requests_requested_middle_person_id_fkey(id, first_name, last_name)
         `)
         .eq('requester_middle_person_id', profile.id)
         .order('created_at', { ascending: false });
@@ -604,7 +661,7 @@ class IntroService {
 
       return {
         success: true,
-        matchmakerRequests: data || [],
+        matchmakerRequests: await this.attachAuthorizedContacts((data || []) as IntroRequest[]),
       };
     } catch (error: any) {
       console.error('Error in getMatchmakerRequests:', error);
