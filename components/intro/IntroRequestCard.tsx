@@ -98,7 +98,7 @@ export default function IntroRequestCardNew({
   const otherProfile = isRequester
     ? request.requested_profile
     : request.requester_profile;
-  const matchmakerProfile = request.requester_middle_person;
+  const matchmakerProfile = request.requested_middle_person ?? request.requester_middle_person;
 
   const getProfileImage = (profile: any) => {
     return imageUrlFor(profile);
