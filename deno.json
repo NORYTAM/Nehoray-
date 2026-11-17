@@ -1,0 +1,6 @@
+{
+  "nodeModulesDir": "auto",
+  "imports": {
+    "svix": "npm:svix@1.40.0"
+  }
+}
