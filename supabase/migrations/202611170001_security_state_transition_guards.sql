@@ -138,7 +138,7 @@ begin
     or new.matchmaker_id is distinct from old.matchmaker_id;
 
   if new.rejection_reason is distinct from old.rejection_reason
-     and not (old.status = 'rejected' and v_profile_changed and new.rejection_reason is null) then
+     and not (old.status = 'rejected' and new.status = 'pending' and new.rejection_reason is null) then
     raise exception 'Only an administrator can change the rejection reason' using errcode = '42501';
   end if;
 
