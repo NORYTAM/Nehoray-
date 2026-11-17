@@ -1110,9 +1110,10 @@ begin
     v_target.head_covering := case when coalesce(v_target.field_privacy ->> 'headCovering', v_target.field_privacy ->> 'head_covering', 'false') = 'true' then null else v_target.head_covering end;
     v_target.smoking := case when coalesce(v_target.field_privacy ->> 'smoking', 'false') = 'true' then null else v_target.smoking end;
     v_target.alcohol_consumption := case when coalesce(v_target.field_privacy ->> 'alcoholConsumption', v_target.field_privacy ->> 'alcohol_consumption', 'false') = 'true' then null else v_target.alcohol_consumption end;
-    v_target.phone := case when coalesce(v_target.field_privacy ->> 'phone', 'false') = 'true' then null else v_target.phone end;
-    v_target.email := case when coalesce(v_target.field_privacy ->> 'email', 'false') = 'true' then null else v_target.email end;
-    v_target.whatsapp := case when coalesce(v_target.field_privacy ->> 'whatsapp', 'false') = 'true' then null else v_target.whatsapp end;
+    -- Contact details are never part of a general member-profile response.
+    v_target.phone := null;
+    v_target.email := null;
+    v_target.whatsapp := null;
     v_target.has_children := case when coalesce(v_target.field_privacy ->> 'hasChildren', v_target.field_privacy ->> 'has_children', 'false') = 'true' then null else v_target.has_children end;
     v_target.resume_url := null;
     return v_target;
@@ -1208,16 +1209,15 @@ begin
      and not (v_approved_fields && array['alcohol_consumption', 'alcoholConsumption']::text[]) then
     v_target.alcohol_consumption := null;
   end if;
-  if coalesce(v_target.field_privacy ->> 'phone', 'false') = 'true'
-     and not ('phone' = any(v_approved_fields)) then
+  -- Contact details are not returned by general profile reads. A completed
+  -- workflow may reveal them through get_workflow_contact_profiles instead.
+  if not ('phone' = any(v_approved_fields)) then
     v_target.phone := null;
   end if;
-  if coalesce(v_target.field_privacy ->> 'email', 'false') = 'true'
-     and not ('email' = any(v_approved_fields)) then
+  if not ('email' = any(v_approved_fields)) then
     v_target.email := null;
   end if;
-  if coalesce(v_target.field_privacy ->> 'whatsapp', 'false') = 'true'
-     and not ('whatsapp' = any(v_approved_fields)) then
+  if not ('whatsapp' = any(v_approved_fields)) then
     v_target.whatsapp := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'hasChildren', v_target.field_privacy ->> 'has_children', 'false') = 'true'
