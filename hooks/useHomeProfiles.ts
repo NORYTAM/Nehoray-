@@ -307,8 +307,8 @@ export function useHomeProfiles() {
       const adminUserIds = new Set(
         (adminUsersQuery.data ?? []).map((a: { user_id: string }) => a.user_id)
       );
-      const nonAdminProfiles = profilesData.filter((p) => !adminUserIds.has(p.user_id));
-      const transformed = nonAdminProfiles.map((p) => transformProfile(p, viewedProfileIds));
+      const nonAdminProfiles = (profilesData as DBProfile[]).filter((p: DBProfile) => !adminUserIds.has(p.user_id));
+      const transformed = nonAdminProfiles.map((p: DBProfile) => transformProfile(p, viewedProfileIds));
       setAllProfiles(transformed);
     }
   }, [data, viewedIds]);
