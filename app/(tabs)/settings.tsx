@@ -50,7 +50,7 @@ export default function SettingsScreen() {
   const [myEngagement, setMyEngagement] =
     useState<EngagementWithProfiles | null>(null);
   const [loadingEngagement, setLoadingEngagement] = useState(true);
-  const { signOut } = useAuth();
+  const { signOut, user } = useAuth();
 
   // Modal states
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -299,7 +299,11 @@ export default function SettingsScreen() {
     if (!myEngagement) return;
     
     setShowUndoEngagementConfirm(false);
-    const result = await engagementService.undoEngagement(myEngagement.id);
+    if (!user) return;
+    const otherUserId = myEngagement.user1_id === user.id
+      ? myEngagement.user2_id
+      : myEngagement.user1_id;
+    const result = await engagementService.undoEngagement(otherUserId);
     
     if (result.success) {
       setMyEngagement(null);
