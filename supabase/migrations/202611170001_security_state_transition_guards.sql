@@ -1123,7 +1123,7 @@ begin
     v_target.dob := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'what_looking_for', 'false') = 'true'
-     and not ('what_looking_for' = any(v_approved_fields)) then
+     and not (v_approved_fields && array['what_looking_for', 'whatLookingFor']::text[]) then
     v_target.what_looking_for := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'height', 'false') = 'true'
@@ -1153,11 +1153,11 @@ begin
     v_target.nationality := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'isCohen', v_target.field_privacy ->> 'is_cohen', 'false') = 'true'
-     and not ('is_cohen' = any(v_approved_fields)) then
+     and not (v_approved_fields && array['is_cohen', 'isCohen']::text[]) then
     v_target.is_cohen := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'hashkafaType', v_target.field_privacy ->> 'hashkafa_type', 'false') = 'true'
-     and not ('hashkafa_type' = any(v_approved_fields)) then
+     and not (v_approved_fields && array['hashkafa_type', 'hashkafaType']::text[]) then
     v_target.hashkafa_type := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'torahLearning', v_target.field_privacy ->> 'torah_learning', 'false') = 'true'
@@ -1173,31 +1173,31 @@ begin
     v_target.education_level := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'postHighSchoolPath', v_target.field_privacy ->> 'post_high_school_path', 'false') = 'true'
-     and not ('post_high_school_path' = any(v_approved_fields)) then
+     and not (v_approved_fields && array['post_high_school_path', 'postHighSchoolPath']::text[]) then
     v_target.post_high_school_path := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'currentOccupationStudy', v_target.field_privacy ->> 'current_occupation_study', 'false') = 'true'
-     and not ('current_occupation_study' = any(v_approved_fields)) then
+     and not (v_approved_fields && array['current_occupation_study', 'currentOccupationStudy']::text[]) then
     v_target.current_occupation_study := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'planAfterMarriage', v_target.field_privacy ->> 'plan_after_marriage', 'false') = 'true'
-     and not ('plan_after_marriage' = any(v_approved_fields)) then
+     and not (v_approved_fields && array['plan_after_marriage', 'planAfterMarriage']::text[]) then
     v_target.plan_after_marriage := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'maritalStatus', v_target.field_privacy ->> 'marital_status', 'false') = 'true'
-     and not ('marital_status' = any(v_approved_fields)) then
+     and not (v_approved_fields && array['marital_status', 'maritalStatus']::text[]) then
     v_target.marital_status := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'dressStyle', v_target.field_privacy ->> 'dress_style', 'false') = 'true'
-     and not ('dress_style' = any(v_approved_fields)) then
+     and not (v_approved_fields && array['dress_style', 'dressStyle']::text[]) then
     v_target.dress_style := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'wearsBlackHat', v_target.field_privacy ->> 'wears_black_hat', 'false') = 'true'
-     and not ('wears_black_hat' = any(v_approved_fields)) then
+     and not (v_approved_fields && array['wears_black_hat', 'wearsBlackHat']::text[]) then
     v_target.wears_black_hat := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'headCovering', v_target.field_privacy ->> 'head_covering', 'false') = 'true'
-     and not ('head_covering' = any(v_approved_fields)) then
+     and not (v_approved_fields && array['head_covering', 'headCovering']::text[]) then
     v_target.head_covering := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'smoking', 'false') = 'true'
@@ -1205,7 +1205,7 @@ begin
     v_target.smoking := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'alcoholConsumption', v_target.field_privacy ->> 'alcohol_consumption', 'false') = 'true'
-     and not ('alcohol_consumption' = any(v_approved_fields)) then
+     and not (v_approved_fields && array['alcohol_consumption', 'alcoholConsumption']::text[]) then
     v_target.alcohol_consumption := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'phone', 'false') = 'true'
