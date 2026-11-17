@@ -120,6 +120,13 @@ async function fetchProfileDetails(profileId: string) {
         // Also add the mapped DB column name if it differs from the privacy key
         const dbColumn = PRIVACY_KEY_TO_DB_COLUMN[r.field_name];
         if (dbColumn) currentApprovedFields.add(dbColumn);
+
+        // Location is one combined Ask Me group in the profile form.
+        if (["location_city", "location_state", "location_country"].includes(r.field_name)) {
+          currentApprovedFields.add("location_city");
+          currentApprovedFields.add("location_state");
+          currentApprovedFields.add("location_country");
+        }
       });
   }
 
