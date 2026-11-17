@@ -65,6 +65,6 @@ jobs:
 
       - name: Type-check Edge Functions
         run: |
-          deno check --no-lock supabase/functions/send-notification/index.ts
+          deno check --node-modules-dir=auto --no-lock supabase/functions/send-notification/index.ts
           deno check --no-lock supabase/functions/send-announcement/index.ts
           deno check --no-lock supabase/functions/resend-webhook/index.ts
