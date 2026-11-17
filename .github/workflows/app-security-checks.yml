@@ -1,0 +1,67 @@
+name: App and security checks
+
+on:
+  push:
+    branches:
+      - main
+      - security/privacy-state-hardening
+  pull_request:
+    branches:
+      - main
+      - security/privacy-state-hardening
+
+permissions:
+  contents: read
+
+jobs:
+  app:
+    name: TypeScript, lint and web export
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Type-check application
+        env:
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-public-anon-key
+        run: npx tsc --noEmit
+
+      - name: Lint application
+        env:
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-public-anon-key
+        run: npm run lint
+
+      - name: Export web app
+        env:
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-public-anon-key
+        run: npx expo export --platform web --output-dir dist
+
+  edge-functions:
+    name: Check Supabase Edge Functions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Format check
+        run: deno fmt --check supabase/functions
+
+      - name: Type-check Edge Functions
+        run: |
+          deno check --no-lock supabase/functions/send-notification/index.ts
+          deno check --no-lock supabase/functions/send-announcement/index.ts
+          deno check --no-lock supabase/functions/resend-webhook/index.ts
