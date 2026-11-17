@@ -58,7 +58,7 @@ async function fetchProfileDetails(profileId: string) {
   ] = await Promise.all([
     profileService.getProfile(),
     introService.getMyIntroRequests(),
-    supabase.from("profiles").select("*").eq("id", profileId).single(),
+    supabase.rpc("get_profile_for_viewer", { p_profile_id: profileId }),
     infoRequestService.getSentRequests(),
   ]);
 
