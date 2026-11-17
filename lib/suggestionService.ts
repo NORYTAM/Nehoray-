@@ -131,40 +131,24 @@ class SuggestionService {
         return { success: false, error: "You cannot suggest yourself" };
       }
 
-      // Create the suggestion
-      // If separate notes are provided, use them; otherwise fall back to single note
-      const insertData: any = {
-        suggester_id: profile.id,
-        profile_one_id: profileOneId,
-        profile_two_id: profileTwoId,
-      };
+      const sharedNote = note?.trim() || "";
+      const { data, error } = await supabase.rpc("create_match_suggestion", {
+        p_profile_one_id: profileOneId,
+        p_profile_two_id: profileTwoId,
+        p_note: profileOneNote !== undefined || profileTwoNote !== undefined
+          ? (profileOneNote?.trim() || profileTwoNote?.trim() || sharedNote)
+          : sharedNote,
+        p_profile_one_note: profileOneNote !== undefined || profileTwoNote !== undefined
+          ? (profileOneNote?.trim() || null)
+          : null,
+        p_profile_two_note: profileOneNote !== undefined || profileTwoNote !== undefined
+          ? (profileTwoNote?.trim() || null)
+          : null,
+      });
 
-      if (profileOneNote !== undefined || profileTwoNote !== undefined) {
-        // Use separate notes
-        insertData.profile_one_note = profileOneNote?.trim() || null;
-        insertData.profile_two_note = profileTwoNote?.trim() || null;
-        // Also set legacy note field for backward compatibility (use first non-empty note)
-        insertData.note =
-          profileOneNote?.trim() ||
-          profileTwoNote?.trim() ||
-          note?.trim() ||
-          null;
-      } else {
-        // Use legacy single note
-        insertData.note = note?.trim() || null;
-        insertData.profile_one_note = null;
-        insertData.profile_two_note = null;
-      }
-
-      const { data, error } = await supabase
-        .from("suggestions")
-        .insert(insertData)
-        .select()
-        .single();
-
-      if (error) {
+      if (error || !data) {
         console.error("Error creating suggestion:", error);
-        return { success: false, error: error.message };
+        return { success: false, error: error?.message || "Could not create suggestion" };
       }
 
       // Fire-and-forget: notify both suggested profiles
@@ -270,31 +254,11 @@ class SuggestionService {
         return { success: false, error: "You are not part of this suggestion" };
       }
 
-      const updateData: any = {
-        updated_at: new Date().toISOString(),
-      };
-
-      if (isProfileOne) {
-        updateData.profile_one_status = response;
-        if (rejectionNote) {
-          updateData.profile_one_rejection_note = rejectionNote;
-        }
-      } else {
-        updateData.profile_two_status = response;
-        if (rejectionNote) {
-          updateData.profile_two_rejection_note = rejectionNote;
-        }
-      }
-
-      // Keep the overall status in sync so the "passed" tab filter works correctly
-      if (response === "rejected") {
-        updateData.status = "rejected";
-      }
-
-      const { error } = await supabase
-        .from("suggestions")
-        .update(updateData)
-        .eq("id", suggestionId);
+      const { error } = await supabase.rpc("respond_to_match_suggestion", {
+        p_suggestion_id: suggestionId,
+        p_response: response,
+        p_rejection_note: rejectionNote ?? null,
+      });
 
       if (error) {
         console.error("Error responding to suggestion:", error);
@@ -454,40 +418,9 @@ class SuggestionService {
         };
       }
 
-      const updateData: any = {
-        updated_at: new Date().toISOString(),
-      };
-
-      // Revert the status back to pending and clear rejection note
-      if (isProfileOne) {
-        updateData.profile_one_status = "pending";
-        updateData.profile_one_rejection_note = null;
-      } else {
-        updateData.profile_two_status = "pending";
-        updateData.profile_two_rejection_note = null;
-      }
-
-      // Update overall suggestion status if needed
-      // If both were rejected and one is reverting, status should be pending
-      // If only one rejected and they're reverting, status should be pending or accepted (depending on other status)
-      const otherStatus = isProfileOne
-        ? suggestion.profile_two_status
-        : suggestion.profile_one_status;
-      if (suggestion.status === "rejected") {
-        // If overall status was rejected, change it based on other party's status
-        if (otherStatus === "rejected") {
-          updateData.status = "pending"; // Both were rejected, now one is pending
-        } else if (otherStatus === "accepted") {
-          updateData.status = "pending"; // Other accepted, this one reverting to pending
-        } else {
-          updateData.status = "pending"; // Other is pending, this one reverting to pending
-        }
-      }
-
-      const { error } = await supabase
-        .from("suggestions")
-        .update(updateData)
-        .eq("id", suggestionId);
+      const { error } = await supabase.rpc("revert_match_suggestion_rejection", {
+        p_suggestion_id: suggestionId,
+      });
 
       if (error) {
         console.error("Error reverting rejection:", error);
@@ -596,39 +529,11 @@ class SuggestionService {
         return { success: false, error: "You are not part of this suggestion" };
       }
 
-      const now = new Date().toISOString();
-      const updateData: any = { updated_at: now };
-
-      if (isProfileOne) {
-        updateData.profile_one_status = "accepted";
-        updateData.profile_one_continuation_choice = choice;
-        if (middlePersonId)
-          updateData.profile_one_middle_person_id = middlePersonId;
-      } else {
-        updateData.profile_two_status = "accepted";
-        updateData.profile_two_continuation_choice = choice;
-        if (middlePersonId)
-          updateData.profile_two_middle_person_id = middlePersonId;
-      }
-
-      // Determine final statuses to decide if suggestion is now completed
-      const otherStatus = isProfileOne
-        ? suggestion.profile_two_status
-        : suggestion.profile_one_status;
-      const otherChoice = isProfileOne
-        ? suggestion.profile_two_continuation_choice
-        : suggestion.profile_one_continuation_choice;
-
-      if (otherStatus === "accepted" && otherChoice) {
-        updateData.status = "completed";
-      } else {
-        updateData.status = "accepted";
-      }
-
-      const { error } = await supabase
-        .from("suggestions")
-        .update(updateData)
-        .eq("id", suggestionId);
+      const { error } = await supabase.rpc("accept_match_suggestion_with_continuation", {
+        p_suggestion_id: suggestionId,
+        p_choice: choice,
+        p_middle_person_id: middlePersonId ?? null,
+      });
 
       if (error) return { success: false, error: error.message };
 
@@ -809,26 +714,11 @@ class SuggestionService {
         return { success: false, error: "You are not part of this suggestion" };
       }
 
-      const updateData: any = {
-        updated_at: new Date().toISOString(),
-      };
-
-      if (isProfileOne) {
-        updateData.profile_one_continuation_choice = choice;
-        if (middlePersonId) {
-          updateData.profile_one_middle_person_id = middlePersonId;
-        }
-      } else {
-        updateData.profile_two_continuation_choice = choice;
-        if (middlePersonId) {
-          updateData.profile_two_middle_person_id = middlePersonId;
-        }
-      }
-
-      const { error } = await supabase
-        .from("suggestions")
-        .update(updateData)
-        .eq("id", suggestionId);
+      const { error } = await supabase.rpc("set_match_suggestion_continuation_choice", {
+        p_suggestion_id: suggestionId,
+        p_choice: choice,
+        p_middle_person_id: middlePersonId ?? null,
+      });
 
       if (error) {
         console.error("Error setting continuation choice:", error);
