@@ -1130,16 +1130,18 @@ begin
      and not ('height' = any(v_approved_fields)) then
     v_target.height := null;
   end if;
-  if coalesce(v_target.field_privacy ->> 'location', v_target.field_privacy ->> 'location_city', 'false') = 'true'
-     and not ('location_city' = any(v_approved_fields)) then
+  -- Location is a single Ask Me group in the form. Approving any one
+  -- location request releases the whole group so the UI never shows a
+  -- partial city/state/country combination.
+  if (
+       coalesce(v_target.field_privacy ->> 'location', 'false') = 'true'
+       or coalesce(v_target.field_privacy ->> 'location_city', 'false') = 'true'
+       or coalesce(v_target.field_privacy ->> 'location_state', 'false') = 'true'
+       or coalesce(v_target.field_privacy ->> 'location_country', 'false') = 'true'
+     )
+     and not (v_approved_fields && array['location_city', 'location_state', 'location_country']::text[]) then
     v_target.location_city := null;
-  end if;
-  if coalesce(v_target.field_privacy ->> 'location', v_target.field_privacy ->> 'location_state', 'false') = 'true'
-     and not ('location_state' = any(v_approved_fields)) then
     v_target.location_state := null;
-  end if;
-  if coalesce(v_target.field_privacy ->> 'location', v_target.field_privacy ->> 'location_country', 'false') = 'true'
-     and not ('location_country' = any(v_approved_fields)) then
     v_target.location_country := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'languages', 'false') = 'true'
