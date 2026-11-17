@@ -51,6 +51,26 @@ export const PRIVACY_KEY_TO_DB_COLUMN: { [key: string]: string } = {
   hasChildren: 'has_children',
 };
 
+/** Reverse mapping used when a database field is checked against form Ask Me keys. */
+export const DB_COLUMN_TO_PRIVACY_KEY: { [key: string]: string } = {
+  torah_learning: 'torahLearning',
+  education_level: 'educationLevel',
+  has_children: 'hasChildren',
+  location_city: 'location',
+  location_state: 'location',
+  location_country: 'location',
+  is_cohen: 'isCohen',
+  hashkafa_type: 'hashkafaType',
+  post_high_school_path: 'postHighSchoolPath',
+  current_occupation_study: 'currentOccupationStudy',
+  plan_after_marriage: 'planAfterMarriage',
+  marital_status: 'maritalStatus',
+  dress_style: 'dressStyle',
+  wears_black_hat: 'wearsBlackHat',
+  head_covering: 'headCovering',
+  alcohol_consumption: 'alcoholConsumption',
+};
+
 /**
  * Returns the human-readable label for a field name.
  * Handles direct matches, camelCase, snake_case, and all-lowercase variants
