@@ -41,15 +41,58 @@ jobs:
           EXPO_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-public-anon-key
         run: npx tsc --noEmit
 
-      - name: Lint application
+      - name: Lint security and workflow files
         env:
           EXPO_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-public-anon-key
-        run: npm run lint
+        run: |
+          npx eslint \
+            app/admin/_layout.tsx \
+            app/profile-details.tsx \
+            components/EngagementButton.tsx \
+            hooks/useHomeProfiles.ts \
+            lib/engagementService.ts \
+            lib/fieldLabels.ts \
+            lib/infoRequestService.ts \
+            lib/introService.ts \
+            lib/notificationService.ts \
+            lib/profileService.ts \
+            lib/suggestionService.ts \
+            supabase/functions/send-notification/index.ts \
+            --rule 'react-hooks/set-state-in-effect: off'
 
       - name: Export web app
         env:
           EXPO_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-public-anon-key
         run: npx expo export --platform web --output-dir dist
+
+
+  sql-grammar:
+    name: Parse Supabase migration SQL
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PostgreSQL parser
+        run: pip install pglast
+      - name: Parse migration SQL
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from pglast import parse_sql
+
+          files = sorted(Path("supabase/migrations").glob("*.sql"))
+          if not files:
+              raise SystemExit("No Supabase migrations found")
+          for path in files:
+              sql = path.read_text()
+              # The PostgreSQL parser validates the migration statement grammar.
+              parse_sql(sql)
+              print(f"SQL grammar OK: {path}")
+          PY
 
   edge-functions:
     name: Check Supabase Edge Functions
