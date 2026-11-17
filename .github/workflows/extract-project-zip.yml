@@ -3,6 +3,8 @@ name: Extract project ZIP
 on:
   push:
     branches: [main]
+    paths:
+      - shiduch-app-master.zip
   workflow_dispatch:
 
 permissions:
