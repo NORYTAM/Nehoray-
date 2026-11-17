@@ -1331,7 +1331,7 @@ begin
     where r.id = p_workflow_id;
 
     if not found
-       or v_intro.status <> 'completed'
+       or v_intro.status not in ('accepted', 'completed')
        or v_intro.matchmaker_status <> 'accepted'
        or v_intro.requested_status <> 'accepted'
        or v_intro.requester_continuation_choice is null
@@ -1396,7 +1396,7 @@ begin
     where s.id = p_workflow_id;
 
     if not found
-       or v_suggestion.status <> 'completed'
+       or v_suggestion.status not in ('accepted', 'completed')
        or v_suggestion.profile_one_status <> 'accepted'
        or v_suggestion.profile_two_status <> 'accepted'
        or v_suggestion.profile_one_continuation_choice is null
