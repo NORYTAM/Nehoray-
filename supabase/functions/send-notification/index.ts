@@ -245,18 +245,26 @@ async function authorizeNotification(
           const counterpartId = actor.id === request.requester_id
             ? request.requested_profile_id
             : request.requester_id;
+          const continuationChosen =
+            request.requester_continuation_choice === "with_middle_person" ||
+            request.requested_continuation_choice === "with_middle_person";
           return recipient.id === counterpartId &&
+            continuationChosen &&
             ["accepted", "completed"].includes(request.status);
         }
         const selectedId = request.requested_middle_person_id ?? request.requester_middle_person_id;
+        const continuationChosen =
+          request.requester_continuation_choice === "with_middle_person" ||
+          request.requested_continuation_choice === "with_middle_person";
         return recipient.id === selectedId &&
+          continuationChosen &&
           ["accepted", "completed"].includes(request.status);
       }
 
       if (suggestionId) {
         const { data: suggestion } = await adminClient
           .from("suggestions")
-          .select("profile_one_id, profile_two_id, profile_one_middle_person_id, profile_two_middle_person_id, profile_one_status, profile_two_status, status")
+          .select("profile_one_id, profile_two_id, profile_one_middle_person_id, profile_two_middle_person_id, profile_one_status, profile_two_status, profile_one_continuation_choice, profile_two_continuation_choice, status")
           .eq("id", suggestionId)
           .maybeSingle();
         if (!suggestion || ![suggestion.profile_one_id, suggestion.profile_two_id].includes(actor.id)) return false;
@@ -264,13 +272,21 @@ async function authorizeNotification(
           ? suggestion.profile_two_id
           : suggestion.profile_one_id;
         if (purpose === "counterpart_notice") {
+          const continuationChosen =
+            suggestion.profile_one_continuation_choice === "with_middle_person" ||
+            suggestion.profile_two_continuation_choice === "with_middle_person";
           return recipient.id === otherId &&
+            continuationChosen &&
             ["accepted", "completed"].includes(suggestion.status);
         }
         const selectedId = actor.id === suggestion.profile_one_id
           ? suggestion.profile_one_middle_person_id
           : suggestion.profile_two_middle_person_id;
-        return !!selectedId && recipient.id === selectedId &&
+        const actorChoice = actor.id === suggestion.profile_one_id
+          ? suggestion.profile_one_continuation_choice
+          : suggestion.profile_two_continuation_choice;
+        return actorChoice === "with_middle_person" &&
+          !!selectedId && recipient.id === selectedId &&
           ["accepted", "completed"].includes(suggestion.status);
       }
 
