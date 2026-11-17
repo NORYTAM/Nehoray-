@@ -806,6 +806,8 @@ class ProfileService {
       // Build update payload: flip role, snapshot old data, reset status
       const updatePayload: Record<string, any> = {
         role: newRole,
+        // A matchmaker profile cannot retain a single's selected matchmaker.
+        matchmaker_id: null,
         status: 'pending',
         rejection_reason: null,
         previous_role_data: previousRoleData,
