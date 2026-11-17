@@ -1005,30 +1005,7 @@ comment on function public.undo_engagement(uuid) is 'Allows either engagement pa
 
 -- Private profile data is masked in authenticated member reads unless the
 -- viewer owns the profile, is an administrator, or the specific info request
--- has been approved. The public-profile share page is deliberately not routed
--- through this function; its existing age/location presentation is unchanged.
-create or replace function public.has_approved_profile_info_request(
-  p_requester_profile_id uuid,
-  p_requested_profile_id uuid,
-  p_field_names text[]
-)
-returns boolean
-language sql
-stable
-security definer
-set search_path = public, pg_temp
-set row_security = off
-as $
-  select exists (
-    select 1
-    from public.info_requests r
-    where r.requester_id = p_requester_profile_id
-      and r.requested_profile_id = p_requested_profile_id
-      and r.status = 'approved'
-      and r.field_name = any(p_field_names)
-  );
-$;
-
+-- has been approved. The public-profile share page remains unchanged.
 create or replace function public.get_profile_for_viewer(p_profile_id uuid)
 returns public.profiles
 language plpgsql
@@ -1040,6 +1017,7 @@ as $
 declare
   v_target public.profiles%rowtype;
   v_viewer_profile_id uuid;
+  v_approved_fields text[] := array[]::text[];
   v_is_admin boolean := false;
 begin
   if auth.uid() is null then
@@ -1061,6 +1039,13 @@ begin
   select p.id into v_viewer_profile_id
   from public.profiles p
   where p.user_id = auth.uid();
+
+  select coalesce(array_agg(r.field_name), array[]::text[])
+    into v_approved_fields
+  from public.info_requests r
+  where r.requester_id = v_viewer_profile_id
+    and r.requested_profile_id = v_target.id
+    and r.status = 'approved';
 
   select exists (
     select 1 from public.admin_users a where a.user_id = auth.uid()
@@ -1109,112 +1094,112 @@ begin
   end if;
 
   if coalesce(v_target.field_privacy ->> 'dob', 'false') = 'true'
-     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['dob']) then
+     and not ('dob' = any(v_approved_fields)) then
     v_target.dob := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'what_looking_for', 'false') = 'true'
-     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['what_looking_for']) then
+     and not ('what_looking_for' = any(v_approved_fields)) then
     v_target.what_looking_for := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'height', 'false') = 'true'
-     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['height']) then
+     and not ('height' = any(v_approved_fields)) then
     v_target.height := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'location_city', 'false') = 'true'
-     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['location_city']) then
+     and not ('location_city' = any(v_approved_fields)) then
     v_target.location_city := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'location_state', 'false') = 'true'
-     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['location_state']) then
+     and not ('location_state' = any(v_approved_fields)) then
     v_target.location_state := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'location_country', 'false') = 'true'
-     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['location_country']) then
+     and not ('location_country' = any(v_approved_fields)) then
     v_target.location_country := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'languages', 'false') = 'true'
-     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['languages']) then
+     and not ('languages' = any(v_approved_fields)) then
     v_target.languages := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'nationality', 'false') = 'true'
-     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['nationality']) then
+     and not ('nationality' = any(v_approved_fields)) then
     v_target.nationality := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'is_cohen', 'false') = 'true'
-     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['is_cohen']) then
+     and not ('is_cohen' = any(v_approved_fields)) then
     v_target.is_cohen := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'hashkafa_type', 'false') = 'true'
-     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['hashkafa_type']) then
+     and not ('hashkafa_type' = any(v_approved_fields)) then
     v_target.hashkafa_type := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'torahLearning', v_target.field_privacy ->> 'torah_learning', 'false') = 'true'
-     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['torahLearning', 'torah_learning']) then
+     and not (v_approved_fields && array['torahLearning', 'torah_learning']::text[]) then
     v_target.torah_learning := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'praying', 'false') = 'true'
-     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['praying']) then
+     and not ('praying' = any(v_approved_fields)) then
     v_target.praying := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'educationLevel', v_target.field_privacy ->> 'education_level', 'false') = 'true'
-     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['educationLevel', 'education_level']) then
+     and not (v_approved_fields && array['educationLevel', 'education_level']::text[]) then
     v_target.education_level := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'post_high_school_path', 'false') = 'true'
-     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['post_high_school_path']) then
+     and not ('post_high_school_path' = any(v_approved_fields)) then
     v_target.post_high_school_path := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'current_occupation_study', 'false') = 'true'
-     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['current_occupation_study']) then
+     and not ('current_occupation_study' = any(v_approved_fields)) then
     v_target.current_occupation_study := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'plan_after_marriage', 'false') = 'true'
-     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['plan_after_marriage']) then
+     and not ('plan_after_marriage' = any(v_approved_fields)) then
     v_target.plan_after_marriage := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'marital_status', 'false') = 'true'
-     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['marital_status']) then
+     and not ('marital_status' = any(v_approved_fields)) then
     v_target.marital_status := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'dress_style', 'false') = 'true'
-     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['dress_style']) then
+     and not ('dress_style' = any(v_approved_fields)) then
     v_target.dress_style := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'wears_black_hat', 'false') = 'true'
-     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['wears_black_hat']) then
+     and not ('wears_black_hat' = any(v_approved_fields)) then
     v_target.wears_black_hat := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'head_covering', 'false') = 'true'
-     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['head_covering']) then
+     and not ('head_covering' = any(v_approved_fields)) then
     v_target.head_covering := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'smoking', 'false') = 'true'
-     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['smoking']) then
+     and not ('smoking' = any(v_approved_fields)) then
     v_target.smoking := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'alcohol_consumption', 'false') = 'true'
-     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['alcohol_consumption']) then
+     and not ('alcohol_consumption' = any(v_approved_fields)) then
     v_target.alcohol_consumption := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'phone', 'false') = 'true'
-     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['phone']) then
+     and not ('phone' = any(v_approved_fields)) then
     v_target.phone := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'email', 'false') = 'true'
-     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['email']) then
+     and not ('email' = any(v_approved_fields)) then
     v_target.email := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'whatsapp', 'false') = 'true'
-     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['whatsapp']) then
+     and not ('whatsapp' = any(v_approved_fields)) then
     v_target.whatsapp := null;
   end if;
   if coalesce(v_target.field_privacy ->> 'hasChildren', v_target.field_privacy ->> 'has_children', 'false') = 'true'
-     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['hasChildren', 'has_children']) then
+     and not (v_approved_fields && array['hasChildren', 'has_children']::text[]) then
     v_target.has_children := null;
   end if;
 
   -- Résumés remain private unless a dedicated request has been approved.
-  if not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['resume', 'resume_url', 'resumeUrl']) then
+  if not (v_approved_fields && array['resume', 'resume_url', 'resumeUrl']::text[]) then
     v_target.resume_url := null;
   end if;
 
@@ -1266,7 +1251,6 @@ begin
 end;
 $;
 
-revoke all on function public.has_approved_profile_info_request(uuid, uuid, text[]) from public, anon, authenticated;
 revoke all on function public.get_profile_for_viewer(uuid) from public, anon;
 revoke all on function public.get_directory_profiles() from public, anon;
 grant execute on function public.get_profile_for_viewer(uuid) to authenticated;
