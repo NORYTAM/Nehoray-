@@ -692,8 +692,17 @@ class IntroService {
     message: string;
     contactPerson?: { name: string; phone?: string; email?: string; whatsapp?: string };
   } {
-    const isActive = request.status === 'accepted' || request.status === 'completed';
-    const isRequesterSide = request.requester_middle_person_id === currentUserProfileId;
+    const isActive =
+      (request.status === 'accepted' || request.status === 'completed') &&
+      request.matchmaker_status === 'accepted' &&
+      request.requested_status === 'accepted' &&
+      !!request.requester_continuation_choice &&
+      !!request.requested_continuation_choice;
+    const selectedMatchmaker =
+      request.requested_middle_person ?? request.requester_middle_person;
+    const isRequesterSide =
+      request.requester_middle_person_id === currentUserProfileId ||
+      request.requested_middle_person_id === currentUserProfileId;
     const isRequestedSide = request.requested_middle_person_id === currentUserProfileId;
 
     if (!isActive) {
@@ -715,7 +724,10 @@ class IntroService {
 
     if (isRequesterSide) {
       const contactProfile =
-        request.requested_middle_person ?? request.requested_profile;
+        request.requester_continuation_choice === 'with_middle_person' ||
+        request.requested_continuation_choice === 'with_middle_person'
+          ? selectedMatchmaker
+          : request.requested_profile;
       if (!contactProfile) {
         return { shouldShowContact: false, message: 'Contact info not available' };
       }
@@ -730,7 +742,10 @@ class IntroService {
 
     if (isRequestedSide) {
       const contactProfile =
-        request.requester_middle_person ?? request.requester_profile;
+        request.requester_continuation_choice === 'with_middle_person' ||
+        request.requested_continuation_choice === 'with_middle_person'
+          ? selectedMatchmaker
+          : request.requester_profile;
       if (!contactProfile) {
         return { shouldShowContact: false, message: 'Contact info not available' };
       }
