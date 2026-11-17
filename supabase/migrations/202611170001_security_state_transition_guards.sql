@@ -27,6 +27,13 @@ begin
       raise exception 'You can only create your own profile' using errcode = '42501';
     end if;
 
+    if new.role is null or new.role not in ('single', 'matchmaker') then
+      raise exception 'Invalid profile role';
+    end if;
+    if new.gender is null or new.gender not in ('male', 'female') then
+      raise exception 'Invalid profile gender';
+    end if;
+
     -- A new profile always starts unapproved; clients cannot self-approve.
     new.status := 'pending';
     new.approved_at := null;
@@ -59,6 +66,12 @@ begin
 
   if new.id is distinct from old.id or new.user_id is distinct from old.user_id then
     raise exception 'Profile identity fields cannot be changed' using errcode = '42501';
+  end if;
+  if new.gender is distinct from old.gender then
+    raise exception 'Profile gender cannot be changed after signup' using errcode = '42501';
+  end if;
+  if new.role is null or new.role not in ('single', 'matchmaker') then
+    raise exception 'Invalid profile role';
   end if;
 
   if new.created_at is distinct from old.created_at then
@@ -167,6 +180,11 @@ revoke insert, update, delete on public.intro_requests from public, anon, authen
 revoke insert, update, delete on public.suggestions from public, anon, authenticated;
 revoke insert, update, delete on public.info_requests from public, anon, authenticated;
 revoke insert, update, delete on public.engagements from public, anon, authenticated;
+
+-- Account deletion and admin membership changes are service-role-only operations.
+revoke delete on public.profiles from public, anon, authenticated;
+revoke insert, update, delete on public.admin_users from public, anon, authenticated;
+grant select on public.admin_users to authenticated;
 
 grant select on public.intro_requests to authenticated;
 grant select on public.suggestions to authenticated;
@@ -909,22 +927,53 @@ as $$
 declare
   v_user1 uuid;
   v_user2 uuid;
+  v_current_profile_id uuid;
+  v_other_profile_id uuid;
   v_engagement public.engagements%rowtype;
   v_is_user1 boolean;
   v_other_confirmed boolean;
 begin
   if auth.uid() is null then raise exception 'Authentication required' using errcode = '42501'; end if;
   if p_other_user_id is null or p_other_user_id = auth.uid() then raise exception 'Invalid engagement partner'; end if;
+  select p.id into v_current_profile_id
+  from public.profiles p
+  where p.user_id = auth.uid()
+    and p.status = 'approved' and p.is_active = true
+    and coalesce(p.account_status, 'active') = 'active';
+  if v_current_profile_id is null then raise exception 'Your profile is not active'; end if;
+
+  select p.id into v_other_profile_id
+  from public.profiles p
+  where p.user_id = p_other_user_id
+    and p.status = 'approved' and p.is_active = true
+    and coalesce(p.account_status, 'active') = 'active';
+  if v_other_profile_id is null then raise exception 'The other profile is not available'; end if;
+
+  -- Engagement confirmations are only valid for a pair that has already
+  -- reached the accepted stage through the app's intro or suggestion workflow.
   if not exists (
-    select 1 from public.profiles p where p.user_id = auth.uid()
-      and p.status = 'approved' and p.is_active = true
-      and coalesce(p.account_status, 'active') = 'active'
-  ) then raise exception 'Your profile is not active'; end if;
-  if not exists (
-    select 1 from public.profiles p where p.user_id = p_other_user_id
-      and p.status = 'approved' and p.is_active = true
-      and coalesce(p.account_status, 'active') = 'active'
-  ) then raise exception 'The other profile is not available'; end if;
+    select 1
+    from public.intro_requests r
+    where r.status in ('accepted', 'completed')
+      and r.matchmaker_status = 'accepted'
+      and r.requested_status = 'accepted'
+      and (
+        (r.requester_id = v_current_profile_id and r.requested_profile_id = v_other_profile_id)
+        or (r.requester_id = v_other_profile_id and r.requested_profile_id = v_current_profile_id)
+      )
+  ) and not exists (
+    select 1
+    from public.suggestions s
+    where s.status in ('accepted', 'completed')
+      and s.profile_one_status = 'accepted'
+      and s.profile_two_status = 'accepted'
+      and (
+        (s.profile_one_id = v_current_profile_id and s.profile_two_id = v_other_profile_id)
+        or (s.profile_one_id = v_other_profile_id and s.profile_two_id = v_current_profile_id)
+      )
+  ) then
+    raise exception 'An accepted match is required before confirming an engagement';
+  end if;
 
   v_user1 := least(auth.uid(), p_other_user_id);
   v_user2 := greatest(auth.uid(), p_other_user_id);
