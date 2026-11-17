@@ -1,0 +1,1419 @@
+import { Ionicons } from "@expo/vector-icons";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
+import React, { useCallback, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Image,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import SuccessModal from "../../../components/SuccessModal";
+import ConfirmationModal from "../../../components/ConfirmationModal";
+import InfoModal from "../../../components/InfoModal";
+import PictureViewerModal from "../../../components/home/PictureViewerModal";
+import { adminService } from "../../../lib/adminService";
+import {
+  getAdminProfileImageUrls,
+  getPicturePrivacyAdminLabel,
+} from "../../../lib/profilePictureVisibility";
+import { Profile, profileService } from "../../../lib/profileService";
+import { calculateAge } from "../../../lib/utils";
+
+function asPicturePaths(value: unknown): string[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+export default function ProfileReviewPage() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState("");
+  const [processingApprove, setProcessingApprove] = useState(false);
+  const [processingReject, setProcessingReject] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successMessage, setSuccessMessage] = useState({
+    title: "",
+    message: "",
+  });
+  
+  // Modal states
+  const [showApproveConfirm, setShowApproveConfirm] = useState(false);
+  const [photoViewer, setPhotoViewer] = useState<{
+    pictures: string[];
+    index: number;
+  } | null>(null);
+  const skipReloadRef = useRef(false);
+
+  const goToAdminHome = (): void => {
+    router.replace("/admin/dashboard");
+  };
+  const [infoModal, setInfoModal] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    onClose?: () => void;
+    iconName?: keyof typeof Ionicons.glyphMap;
+    iconColor?: string;
+  }>({
+    visible: false,
+    title: '',
+    message: '',
+  });
+
+  const loadProfile = useCallback(async () => {
+    if (!id) {
+      goToAdminHome();
+      return;
+    }
+
+    if (skipReloadRef.current) {
+      return;
+    }
+
+    setLoading(true);
+    const result = await adminService.getProfileForReview(id);
+    if (skipReloadRef.current) {
+      setLoading(false);
+      return;
+    }
+    if (result.success && result.profile) {
+      setProfile(result.profile);
+    } else {
+      setInfoModal({
+        visible: true,
+        title: 'Error',
+        message: result.error || 'Profile not found',
+        onClose: goToAdminHome,
+        iconName: 'alert-circle',
+        iconColor: '#F44336',
+      });
+    }
+    setLoading(false);
+  }, [id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadProfile();
+    }, [loadProfile]),
+  );
+
+  const handleApprove = async (profileId: string) => {
+    if (!profile) return;
+    setShowApproveConfirm(true);
+  };
+
+  const confirmApprove = async () => {
+    if (!profile) return;
+    
+    setShowApproveConfirm(false);
+    setProcessingApprove(true);
+    const result = await adminService.approveProfile(profile.id);
+    setProcessingApprove(false);
+
+    if (result.success) {
+      skipReloadRef.current = true;
+      const isUpdate = profile.is_update;
+      setSuccessMessage({
+        title: "Profile Approved!",
+        message: isUpdate
+          ? "The profile update has been approved successfully. The user can now use the app again."
+          : "The profile has been approved successfully and is now visible to other users.",
+      });
+      setShowSuccessModal(true);
+    } else {
+      setInfoModal({
+        visible: true,
+        title: 'Error',
+        message: result.error || 'Failed to approve profile',
+        iconName: 'alert-circle',
+        iconColor: '#F44336',
+      });
+    }
+  };
+
+  const handleReject = () => {
+    if (!profile) return;
+    setRejectionReason("");
+    setShowRejectModal(true);
+  };
+
+  const confirmReject = async () => {
+    if (!profile) return;
+
+    if (!rejectionReason.trim()) {
+      setInfoModal({
+        visible: true,
+        title: 'Error',
+        message: 'Please provide a reason for rejection',
+        iconName: 'alert-circle',
+        iconColor: '#F44336',
+      });
+      return;
+    }
+
+    setProcessingReject(true);
+    const result = await adminService.rejectProfile(
+      profile.id,
+      rejectionReason,
+    );
+    setProcessingReject(false);
+
+    if (result.success) {
+      skipReloadRef.current = true;
+      const isUpdate = profile.is_update;
+      setSuccessMessage({
+        title: "Profile Rejected",
+        message: isUpdate
+          ? "The profile update has been rejected. The user will be notified and must update their profile again."
+          : "The profile has been rejected and the user will be notified.",
+      });
+      setShowSuccessModal(true);
+      setShowRejectModal(false);
+    } else {
+      setInfoModal({
+        visible: true,
+        title: 'Error',
+        message: result.error || 'Failed to reject profile',
+        iconName: 'alert-circle',
+        iconColor: '#F44336',
+      });
+    }
+  };
+
+  const handleSuccessClose = () => {
+    setShowSuccessModal(false);
+    goToAdminHome();
+  };
+
+  const getImageUrl = (path: string) => {
+    return profileService.getImageUrl(path);
+  };
+
+  const openPhotoViewer = (paths: string[], index: number): void => {
+    setPhotoViewer({
+      pictures: paths.map((path) => getImageUrl(path)),
+      index,
+    });
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#1293DA" />
+          <Text style={styles.loadingText}>Loading profile...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Profile not found</Text>
+          <TouchableOpacity
+            onPress={goToAdminHome}
+            style={styles.backButton}
+          >
+            <Text style={styles.backButtonText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const adminPhotoUrls = getAdminProfileImageUrls(profile);
+  const picturePrivacyLabel = getPicturePrivacyAdminLabel(
+    profile.picture_privacy
+  );
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={goToAdminHome} accessibilityLabel="Go back">
+          <Ionicons name="arrow-back" size={24} color="#333" />
+        </TouchableOpacity>
+        <View style={styles.titleContainer}>
+          <Text style={styles.title}>Profile Review</Text>
+          <View style={styles.badgeRow}>
+            {profile.is_update ? (
+              <View style={styles.updateBadge}>
+                <Ionicons name="refresh" size={12} color="#ff9800" />
+                <Text style={styles.updateBadgeText}>Profile Update</Text>
+              </View>
+            ) : (
+              <View style={styles.newBadge}>
+                <Ionicons name="add-circle" size={12} color="#4caf50" />
+                <Text style={styles.newBadgeText}>New Profile</Text>
+              </View>
+            )}
+            {profile.previous_role_data && (
+              <View style={styles.roleSwitchBadge}>
+                <Ionicons name="swap-horizontal" size={12} color="#9c27b0" />
+                <Text style={styles.roleSwitchBadgeText}>Role Switch</Text>
+              </View>
+            )}
+          </View>
+        </View>
+        <View style={{ width: 24 }} />
+      </View>
+
+      <ScrollView style={styles.content}>
+        {/* Photos — always visible to admins, including "No photo" / hidden privacy */}
+        <View style={styles.picturesSection}>
+          <Text style={styles.sectionTitle}>
+            Submitted photos ({adminPhotoUrls.length})
+          </Text>
+          <Text style={styles.privacyNote}>{picturePrivacyLabel}</Text>
+          {adminPhotoUrls.length > 0 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {adminPhotoUrls.map((pictureUrl, index) => (
+                <TouchableOpacity
+                  key={`${pictureUrl}-${index}`}
+                  onPress={() =>
+                    openPhotoViewer(
+                      Array.isArray(profile.pictures)
+                        ? profile.pictures.filter(
+                            (path): path is string => typeof path === 'string'
+                          )
+                        : [],
+                      index
+                    )
+                  }
+                  accessibilityLabel="View submitted photo full screen"
+                >
+                  <Image
+                    source={{ uri: pictureUrl }}
+                    style={styles.profilePicture}
+                  />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          ) : (
+            <View style={styles.noPhotosBox}>
+              <Ionicons name="image-outline" size={36} color="#ccc" />
+              <Text style={styles.noPhotosText}>No photos uploaded</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Profile Type Info */}
+        {profile.is_update && profile.last_approved_at && (
+          <View style={styles.infoBanner}>
+            <Ionicons name="information-circle" size={20} color="#2196f3" />
+            <View style={styles.infoBannerContent}>
+              <Text style={styles.infoBannerTitle}>Profile Update</Text>
+              <Text style={styles.infoBannerText}>
+                This profile was previously approved on{" "}
+                {new Date(profile.last_approved_at).toLocaleDateString()}. The
+                user has made changes that require your review.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Role Switch Before / After */}
+        {profile.previous_role_data && (
+          <View style={styles.roleSwitchSection}>
+            <View style={styles.roleSwitchSectionHeader}>
+              <Ionicons name="swap-horizontal" size={18} color="#9c27b0" />
+              <Text style={styles.roleSwitchSectionTitle}>Role Switch</Text>
+            </View>
+            <Text style={styles.roleSwitchSectionSubtitle}>
+              This user switched from{" "}
+              <Text style={styles.roleSwitchHighlight}>
+                {profile.previous_role_data.role === "single"
+                  ? "Single"
+                  : "Matchmaker"}
+              </Text>{" "}
+              to{" "}
+              <Text style={styles.roleSwitchHighlight}>
+                {profile.role === "single" ? "Single" : "Matchmaker"}
+              </Text>{" "}
+              on{" "}
+              {new Date(
+                profile.previous_role_data.saved_at,
+              ).toLocaleDateString()}
+              .
+            </Text>
+
+            <View style={styles.beforeAfterRow}>
+              {/* BEFORE */}
+              <View style={[styles.beforeAfterCard, styles.beforeCard]}>
+                <View style={styles.beforeAfterCardHeader}>
+                  <Ionicons
+                    name="arrow-back-circle"
+                    size={16}
+                    color="#e53935"
+                  />
+                  <Text style={styles.beforeCardTitle}>
+                    Before —{" "}
+                    {profile.previous_role_data.role === "single"
+                      ? "Single"
+                      : "Matchmaker"}
+                  </Text>
+                </View>
+                {Object.keys(profile.previous_role_data.fields).length === 0 ? (
+                  <Text style={styles.noDataText}>No data saved</Text>
+                ) : (
+                  Object.entries(profile.previous_role_data.fields).map(
+                    ([key, value]) => (
+                      <View key={key} style={styles.roleDataRow}>
+                        <Text style={styles.roleDataLabel}>
+                          {key
+                            .replace(/_/g, " ")
+                            .replace(/\b\w/g, (l) => l.toUpperCase())}
+                        </Text>
+                        <Text style={styles.roleDataValueBefore}>
+                          {value === null || value === undefined
+                            ? "—"
+                            : typeof value === "boolean"
+                              ? value
+                                ? "Yes"
+                                : "No"
+                              : String(value)}
+                        </Text>
+                      </View>
+                    ),
+                  )
+                )}
+              </View>
+
+              {/* AFTER */}
+              <View style={[styles.beforeAfterCard, styles.afterCard]}>
+                <View style={styles.beforeAfterCardHeader}>
+                  <Ionicons
+                    name="arrow-forward-circle"
+                    size={16}
+                    color="#2e7d32"
+                  />
+                  <Text style={styles.afterCardTitle}>
+                    After —{" "}
+                    {profile.role === "single" ? "Single" : "Matchmaker"}
+                  </Text>
+                </View>
+                {profile.role === "single" ? (
+                  <>
+                    {profile.what_looking_for && (
+                      <RoleDataRow
+                        label="What looking for"
+                        value={profile.what_looking_for}
+                      />
+                    )}
+                    {profile.torah_learning && (
+                      <RoleDataRow
+                        label="Torah learning"
+                        value={profile.torah_learning}
+                      />
+                    )}
+                    {profile.praying && (
+                      <RoleDataRow label="Praying" value={profile.praying} />
+                    )}
+                    {profile.marital_status && (
+                      <RoleDataRow
+                        label="Marital status"
+                        value={profile.marital_status}
+                      />
+                    )}
+                    {profile.plan_after_marriage && (
+                      <RoleDataRow
+                        label="Plan after marriage"
+                        value={profile.plan_after_marriage}
+                      />
+                    )}
+                    {profile.post_high_school_path && (
+                      <RoleDataRow
+                        label="Post high school"
+                        value={profile.post_high_school_path}
+                      />
+                    )}
+                    {profile.head_covering && (
+                      <RoleDataRow
+                        label="Head covering"
+                        value={profile.head_covering}
+                      />
+                    )}
+                    {profile.dress_style && (
+                      <RoleDataRow
+                        label="Dress style"
+                        value={profile.dress_style}
+                      />
+                    )}
+                    {profile.is_cohen !== null &&
+                      profile.is_cohen !== undefined && (
+                        <RoleDataRow
+                          label="Cohen"
+                          value={profile.is_cohen ? "Yes" : "No"}
+                        />
+                      )}
+                    {profile.wears_black_hat !== null &&
+                      profile.wears_black_hat !== undefined && (
+                        <RoleDataRow
+                          label="Wears black hat"
+                          value={profile.wears_black_hat ? "Yes" : "No"}
+                        />
+                      )}
+                    {profile.resume_url && (
+                      <RoleDataRow label="Resume" value="Uploaded" />
+                    )}
+                    {!profile.what_looking_for &&
+                      !profile.torah_learning &&
+                      !profile.praying && (
+                        <Text style={styles.noDataText}>
+                          Fields not yet filled
+                        </Text>
+                      )}
+                  </>
+                ) : (
+                  <>
+                    {(profile as any).religious_level && (
+                      <RoleDataRow
+                        label="Religious level"
+                        value={(profile as any).religious_level}
+                      />
+                    )}
+                    {(profile as any).cultural_origin && (
+                      <RoleDataRow
+                        label="Cultural origin"
+                        value={(profile as any).cultural_origin}
+                      />
+                    )}
+                    {!(profile as any).religious_level &&
+                      !(profile as any).cultural_origin && (
+                        <Text style={styles.noDataText}>
+                          Fields not yet filled
+                        </Text>
+                      )}
+                  </>
+                )}
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Changes Summary */}
+        {profile.pending_changes && (
+          <View style={styles.changesSection}>
+            <Text style={styles.sectionTitle}>Changes Made</Text>
+            <View style={styles.changesSummaryBox}>
+              <Text style={styles.changesSummaryText}>
+                {profile.pending_changes.summary}
+              </Text>
+            </View>
+            {profile.pending_changes.changes &&
+              profile.pending_changes.changes.length > 0 && (
+                <View style={styles.changesList}>
+                  {profile.pending_changes.changes.map((change, index) => {
+                    const oldPictures = change.field === "pictures"
+                      ? asPicturePaths(change.oldValue)
+                      : null;
+                    const newPictures = change.field === "pictures"
+                      ? asPicturePaths(change.newValue)
+                      : null;
+                    const isPictureChange =
+                      oldPictures !== null && newPictures !== null;
+
+                    return (
+                    <View key={index} style={styles.changeItem}>
+                      <Text style={styles.changeFieldName}>
+                        {change.displayName}:
+                      </Text>
+                      {isPictureChange ? (
+                        <View style={styles.pictureChangeCompare}>
+                          <Text style={styles.changeLabel}>Previous photos</Text>
+                          <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                          >
+                            {oldPictures.length === 0 ? (
+                              <Text style={styles.noPhotosText}>No photos</Text>
+                            ) : (
+                              oldPictures.map((picture, pictureIndex) => (
+                                <TouchableOpacity
+                                  key={`old-${picture}-${pictureIndex}`}
+                                  onPress={() =>
+                                    openPhotoViewer(oldPictures, pictureIndex)
+                                  }
+                                  accessibilityLabel="View previous photo full screen"
+                                >
+                                  <Image
+                                    source={{ uri: getImageUrl(picture) }}
+                                    style={styles.changePicture}
+                                  />
+                                </TouchableOpacity>
+                              ))
+                            )}
+                          </ScrollView>
+                          <Text style={[styles.changeLabel, styles.changeLabelSpaced]}>
+                            New photos
+                          </Text>
+                          <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                          >
+                            {newPictures.length === 0 ? (
+                              <Text style={styles.noPhotosText}>No photos</Text>
+                            ) : (
+                              newPictures.map((picture, pictureIndex) => (
+                                <TouchableOpacity
+                                  key={`new-${picture}-${pictureIndex}`}
+                                  onPress={() =>
+                                    openPhotoViewer(newPictures, pictureIndex)
+                                  }
+                                  accessibilityLabel="View new photo full screen"
+                                >
+                                  <Image
+                                    source={{ uri: getImageUrl(picture) }}
+                                    style={styles.changePicture}
+                                  />
+                                </TouchableOpacity>
+                              ))
+                            )}
+                          </ScrollView>
+                        </View>
+                      ) : (
+                      <View style={styles.changeValues}>
+                        <Text style={styles.changeOldValue}>
+                          <Text style={styles.changeLabel}>From: </Text>
+                          {String(change.oldValue || "Not set")}
+                        </Text>
+                        <Text style={styles.changeNewValue}>
+                          <Text style={styles.changeLabel}>To: </Text>
+                          {String(change.newValue || "Not set")}
+                        </Text>
+                      </View>
+                      )}
+                    </View>
+                    );
+                  })}
+                </View>
+              )}
+          </View>
+        )}
+
+        {/* Personal Info */}
+        <View style={styles.detailSection}>
+          <Text style={styles.sectionTitle}>Personal Information</Text>
+          <DetailRow
+            label="Name"
+            value={`${profile.first_name} ${profile.last_name}`}
+          />
+          {profile.dob && (
+            <>
+              <DetailRow
+                label="Age"
+                value={`${calculateAge(profile.dob)} years old`}
+              />
+              <DetailRow
+                label="Date of Birth"
+                value={new Date(profile.dob).toLocaleDateString()}
+              />
+            </>
+          )}
+          <DetailRow
+            label="Gender"
+            value={
+              profile.gender.charAt(0).toUpperCase() + profile.gender.slice(1)
+            }
+          />
+          <DetailRow
+            label="Role"
+            value={profile.role === "single" ? "Single" : "Matchmaker"}
+          />
+          {profile.height && (
+            <DetailRow label="Height" value={profile.height} />
+          )}
+          {profile.marital_status && (
+            <DetailRow label="Marital Status" value={profile.marital_status} />
+          )}
+        </View>
+
+        {/* Bio */}
+        <View style={styles.detailSection}>
+          <Text style={styles.sectionTitle}>Bio</Text>
+          <Text style={styles.bioText}>{profile.bio}</Text>
+        </View>
+
+        {/* What Looking For (Singles only) */}
+        {profile.role === "single" && profile.what_looking_for && (
+          <View style={styles.detailSection}>
+            <Text style={styles.sectionTitle}>What I&apos;m Looking For</Text>
+            <Text style={styles.bioText}>{profile.what_looking_for}</Text>
+          </View>
+        )}
+
+        {/* Location */}
+        {(profile.location_country ||
+          profile.location_state ||
+          profile.location_city) && (
+          <View style={styles.detailSection}>
+            <Text style={styles.sectionTitle}>Location</Text>
+            {profile.location_country && (
+              <DetailRow label="Country" value={profile.location_country} />
+            )}
+            {profile.location_state && (
+              <DetailRow label="State" value={profile.location_state} />
+            )}
+            {profile.location_city && (
+              <DetailRow label="City" value={profile.location_city} />
+            )}
+          </View>
+        )}
+
+        {/* Contact Info */}
+        <View style={styles.detailSection}>
+          <Text style={styles.sectionTitle}>Contact information</Text>
+          <DetailRow label="Phone" value={profile.phone} />
+          {profile.email && <DetailRow label="Email" value={profile.email} />}
+          {profile.whatsapp && (
+            <DetailRow label="WhatsApp" value={profile.whatsapp} />
+          )}
+        </View>
+
+        {/* Background & Nationality */}
+        {(profile.languages?.length ||
+          profile.nationality?.length ||
+          profile.is_cohen !== null) && (
+          <View style={styles.detailSection}>
+            <Text style={styles.sectionTitle}>Background & Nationality</Text>
+            {profile.languages && profile.languages.length > 0 && (
+              <DetailRow
+                label="Languages"
+                value={profile.languages.join(", ")}
+              />
+            )}
+            {profile.nationality && profile.nationality.length > 0 && (
+              <DetailRow
+                label="Nationality"
+                value={profile.nationality.join(", ")}
+              />
+            )}
+            {profile.is_cohen !== undefined && profile.is_cohen !== null && (
+              <DetailRow
+                label="Cohen"
+                value={profile.is_cohen ? "Yes" : "No"}
+              />
+            )}
+          </View>
+        )}
+
+        {/* Religious Outlook */}
+        {(profile.hashkafa_type ||
+          profile.torah_learning ||
+          profile.praying) && (
+          <View style={styles.detailSection}>
+            <Text style={styles.sectionTitle}>Religious Outlook</Text>
+            {profile.hashkafa_type && (
+              <DetailRow label="Hashkafa Type" value={profile.hashkafa_type} />
+            )}
+            {profile.torah_learning && (
+              <DetailRow
+                label="Torah Learning"
+                value={profile.torah_learning}
+              />
+            )}
+            {profile.praying && (
+              <DetailRow label="Praying" value={profile.praying} />
+            )}
+          </View>
+        )}
+
+        {/* Education */}
+        {(profile.education_level || profile.post_high_school_path) && (
+          <View style={styles.detailSection}>
+            <Text style={styles.sectionTitle}>Education</Text>
+            {profile.education_level && (
+              <DetailRow
+                label="Education Level"
+                value={profile.education_level}
+              />
+            )}
+            {profile.post_high_school_path && (
+              <DetailRow
+                label="Post High School Path"
+                value={profile.post_high_school_path}
+              />
+            )}
+          </View>
+        )}
+
+        {/* Occupation & Career */}
+        {(profile.current_occupation_study || profile.plan_after_marriage) && (
+          <View style={styles.detailSection}>
+            <Text style={styles.sectionTitle}>Occupation & Career</Text>
+            {profile.current_occupation_study && (
+              <DetailRow
+                label="Current Occupation/Study"
+                value={profile.current_occupation_study}
+              />
+            )}
+            {profile.plan_after_marriage && (
+              <DetailRow
+                label="Plan After Marriage"
+                value={profile.plan_after_marriage}
+              />
+            )}
+          </View>
+        )}
+
+        {/* Dress & Appearance */}
+        {(profile.dress_style ||
+          profile.wears_black_hat !== null ||
+          profile.head_covering) && (
+          <View style={styles.detailSection}>
+            <Text style={styles.sectionTitle}>Dress & Appearance</Text>
+            {profile.dress_style && (
+              <DetailRow label="Dress Style" value={profile.dress_style} />
+            )}
+            {profile.wears_black_hat !== undefined &&
+              profile.wears_black_hat !== null && (
+                <DetailRow
+                  label="Wears Black Hat"
+                  value={profile.wears_black_hat ? "Yes" : "No"}
+                />
+              )}
+            {profile.head_covering && (
+              <DetailRow label="Head Covering" value={profile.head_covering} />
+            )}
+          </View>
+        )}
+
+        {/* Lifestyle */}
+        {(profile.smoking || profile.alcohol_consumption) && (
+          <View style={styles.detailSection}>
+            <Text style={styles.sectionTitle}>Lifestyle</Text>
+            {profile.smoking && (
+              <DetailRow label="Smoking" value={profile.smoking} />
+            )}
+            {profile.alcohol_consumption && (
+              <DetailRow
+                label="Alcohol Consumption"
+                value={profile.alcohol_consumption}
+              />
+            )}
+          </View>
+        )}
+
+        {/* Privacy Settings */}
+        {profile.field_privacy &&
+          Object.keys(profile.field_privacy).length > 0 && (
+            <View style={styles.detailSection}>
+              <Text style={styles.sectionTitle}>Privacy Settings</Text>
+              <Text style={styles.privacyNote}>
+                The following fields are marked as private (Ask me):
+              </Text>
+              {Object.entries(profile.field_privacy).map(
+                ([field, isPrivate]) =>
+                  isPrivate && (
+                    <Text key={field} style={styles.privateField}>
+                      •{" "}
+                      {field
+                        .replace(/_/g, " ")
+                        .replace(/\b\w/g, (l) => l.toUpperCase())}
+                    </Text>
+                  ),
+              )}
+            </View>
+          )}
+      </ScrollView>
+
+      {/* Action Buttons */}
+      <View style={styles.actionButtons}>
+        <TouchableOpacity
+          style={[styles.actionButton, styles.rejectButton]}
+          onPress={handleReject}
+          disabled={processingApprove || processingReject}
+        >
+          {processingReject ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <>
+              <Ionicons name="close-circle" size={20} color="#fff" />
+              <Text style={styles.actionButtonText}>Reject</Text>
+            </>
+          )}
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.actionButton, styles.approveButton]}
+          onPress={() => handleApprove(profile.id)}
+          disabled={processingApprove || processingReject}
+        >
+          {processingApprove ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <>
+              <Ionicons name="checkmark-circle" size={20} color="#fff" />
+              <Text style={styles.actionButtonText}>Approve</Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      {/* Reject Modal */}
+      <Modal
+        visible={showRejectModal}
+        animationType="fade"
+        transparent
+        statusBarTranslucent
+      >
+        <View style={styles.rejectModalOverlay}>
+          <View style={styles.rejectModal}>
+            <Text style={styles.rejectModalTitle}>Reject Profile</Text>
+            <Text style={styles.rejectModalSubtitle}>
+              Please provide a reason for rejection:
+            </Text>
+            <TextInput
+              style={styles.rejectInput}
+              value={rejectionReason}
+              onChangeText={setRejectionReason}
+              placeholder="Enter reason..."
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+            />
+            <View style={styles.rejectModalButtons}>
+              <TouchableOpacity
+                style={[styles.rejectModalButton, styles.rejectModalCancel]}
+                onPress={() => setShowRejectModal(false)}
+                disabled={processingReject}
+              >
+                <Text style={styles.rejectModalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.rejectModalButton, styles.rejectModalConfirm]}
+                onPress={confirmReject}
+                disabled={processingReject}
+              >
+                {processingReject ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.rejectModalConfirmText}>Reject</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {photoViewer !== null && (
+        <PictureViewerModal
+          visible
+          pictures={photoViewer.pictures}
+          initialIndex={photoViewer.index}
+          onClose={() => setPhotoViewer(null)}
+        />
+      )}
+
+      {showSuccessModal && (
+        <SuccessModal
+          visible
+          title={successMessage.title}
+          message={successMessage.message}
+          onClose={handleSuccessClose}
+        />
+      )}
+
+      {profile && showApproveConfirm && (
+        <ConfirmationModal
+          visible
+          title="Approve Profile"
+          message={
+            profile.is_update
+              ? "Are you sure you want to approve this profile update? The user will be able to use the app again."
+              : "Are you sure you want to approve this profile? It will be visible to other users."
+          }
+          confirmText="Approve"
+          cancelText="Cancel"
+          onConfirm={confirmApprove}
+          onCancel={() => setShowApproveConfirm(false)}
+          loading={processingApprove}
+          iconName="checkmark-circle"
+          iconColor="#4CAF50"
+        />
+      )}
+
+      {infoModal.visible && (
+        <InfoModal
+          visible
+          title={infoModal.title}
+          message={infoModal.message}
+          iconName={infoModal.iconName}
+          iconColor={infoModal.iconColor}
+          onClose={() => {
+            const closeAction = infoModal.onClose;
+            setInfoModal({ visible: false, title: '', message: '' });
+            if (closeAction) {
+              closeAction();
+            }
+          }}
+        />
+      )}
+    </SafeAreaView>
+  );
+}
+
+const DetailRow = ({ label, value }: { label: string; value: string }) => (
+  <View style={styles.detailRow}>
+    <Text style={styles.detailLabel}>{label}:</Text>
+    <Text style={styles.detailValue}>{value}</Text>
+  </View>
+);
+
+const RoleDataRow = ({ label, value }: { label: string; value: string }) => (
+  <View style={styles.roleDataRow}>
+    <Text style={styles.roleDataLabel}>{label}</Text>
+    <Text style={styles.roleDataValueAfter}>{value}</Text>
+  </View>
+);
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#f8f9fa",
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: "#666",
+  },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 20,
+    backgroundColor: "#fff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e0e0e0",
+  },
+  titleContainer: {
+    flex: 1,
+    alignItems: "center",
+    gap: 4,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#333",
+  },
+  content: {
+    flex: 1,
+    padding: 20,
+  },
+  infoBanner: {
+    flexDirection: "row",
+    backgroundColor: "#e3f2fd",
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 20,
+    alignItems: "flex-start",
+  },
+  infoBannerContent: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  infoBannerTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#1976d2",
+    marginBottom: 4,
+  },
+  infoBannerText: {
+    fontSize: 14,
+    color: "#1976d2",
+    lineHeight: 20,
+  },
+  changesSection: {
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#e3f2fd",
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#333",
+    marginBottom: 12,
+  },
+  changesSummaryBox: {
+    backgroundColor: "#f5f5f5",
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  changesSummaryText: {
+    fontSize: 14,
+    color: "#333",
+    lineHeight: 20,
+  },
+  changesList: {
+    marginTop: 8,
+  },
+  changeItem: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+  changeFieldName: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 6,
+  },
+  changeValues: {
+    marginLeft: 8,
+  },
+  changeOldValue: {
+    fontSize: 13,
+    color: "#999",
+    marginBottom: 4,
+    fontStyle: "italic",
+  },
+  changeNewValue: {
+    fontSize: 13,
+    color: "#4caf50",
+    fontWeight: "500",
+  },
+  changeLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#666",
+  },
+  changeLabelSpaced: {
+    marginTop: 12,
+  },
+  pictureChangeCompare: {
+    marginLeft: 8,
+    gap: 8,
+  },
+  changePicture: {
+    width: 96,
+    height: 96,
+    borderRadius: 8,
+    marginRight: 8,
+    marginTop: 6,
+    backgroundColor: "#f0f0f0",
+  },
+  noPhotosText: {
+    fontSize: 13,
+    color: "#999",
+    fontStyle: "italic",
+    marginTop: 6,
+  },
+  badgeRow: {
+    flexDirection: "row",
+    gap: 6,
+    flexWrap: "wrap",
+    justifyContent: "center",
+  },
+  updateBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff3e0",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  updateBadgeText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#ff9800",
+  },
+  newBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#e8f5e9",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  newBadgeText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#4caf50",
+  },
+  roleSwitchBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f3e5f5",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  roleSwitchBadgeText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#9c27b0",
+  },
+  roleSwitchSection: {
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#e1bee7",
+  },
+  roleSwitchSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 6,
+  },
+  roleSwitchSectionTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#7b1fa2",
+  },
+  roleSwitchSectionSubtitle: {
+    fontSize: 13,
+    color: "#555",
+    marginBottom: 14,
+    lineHeight: 18,
+  },
+  roleSwitchHighlight: {
+    fontWeight: "700",
+    color: "#7b1fa2",
+  },
+  beforeAfterRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  beforeAfterCard: {
+    flex: 1,
+    borderRadius: 8,
+    padding: 12,
+  },
+  beforeCard: {
+    backgroundColor: "#ffebee",
+    borderWidth: 1,
+    borderColor: "#ef9a9a",
+  },
+  afterCard: {
+    backgroundColor: "#e8f5e9",
+    borderWidth: 1,
+    borderColor: "#a5d6a7",
+  },
+  beforeAfterCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 10,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,0,0,0.08)",
+  },
+  beforeCardTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#c62828",
+    flexShrink: 1,
+  },
+  afterCardTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#2e7d32",
+    flexShrink: 1,
+  },
+  roleDataRow: {
+    marginBottom: 6,
+  },
+  roleDataLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#555",
+    textTransform: "capitalize",
+  },
+  roleDataValueBefore: {
+    fontSize: 12,
+    color: "#b71c1c",
+    marginTop: 1,
+  },
+  roleDataValueAfter: {
+    fontSize: 12,
+    color: "#1b5e20",
+    marginTop: 1,
+  },
+  noDataText: {
+    fontSize: 12,
+    color: "#999",
+    fontStyle: "italic",
+  },
+  picturesSection: {
+    marginBottom: 20,
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    padding: 16,
+  },
+  profilePicture: {
+    width: 150,
+    height: 150,
+    borderRadius: 8,
+    marginRight: 12,
+  },
+  noPhotosBox: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 24,
+    gap: 8,
+  },
+  detailSection: {
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 16,
+  },
+  detailRow: {
+    flexDirection: "row",
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+  detailLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#666",
+    width: 120,
+  },
+  detailValue: {
+    flex: 1,
+    fontSize: 14,
+    color: "#333",
+  },
+  bioText: {
+    fontSize: 14,
+    color: "#333",
+    lineHeight: 20,
+  },
+  privacyNote: {
+    fontSize: 14,
+    color: "#666",
+    marginBottom: 12,
+    fontStyle: "italic",
+  },
+  privateField: {
+    fontSize: 14,
+    color: "#1293DA",
+    marginLeft: 8,
+    marginBottom: 4,
+  },
+  actionButtons: {
+    flexDirection: "row",
+    padding: 20,
+    backgroundColor: "#fff",
+    borderTopWidth: 1,
+    borderTopColor: "#e0e0e0",
+    gap: 12,
+  },
+  actionButton: {
+    flex: 1,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 16,
+    borderRadius: 8,
+    gap: 8,
+  },
+  approveButton: {
+    backgroundColor: "#4caf50",
+  },
+  rejectButton: {
+    backgroundColor: "#f44336",
+  },
+  actionButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  rejectModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  rejectModal: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 24,
+    width: "100%",
+    maxWidth: 400,
+  },
+  rejectModalTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#333",
+    marginBottom: 8,
+  },
+  rejectModalSubtitle: {
+    fontSize: 14,
+    color: "#666",
+    marginBottom: 16,
+  },
+  rejectInput: {
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+    minHeight: 100,
+    marginBottom: 16,
+  },
+  rejectModalButtons: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  rejectModalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  rejectModalCancel: {
+    backgroundColor: "#f0f0f0",
+  },
+  rejectModalConfirm: {
+    backgroundColor: "#f44336",
+  },
+  rejectModalCancelText: {
+    color: "#666",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  rejectModalConfirmText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  backButton: {
+    marginTop: 16,
+    padding: 12,
+    backgroundColor: "#1293DA",
+    borderRadius: 8,
+  },
+  backButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+});

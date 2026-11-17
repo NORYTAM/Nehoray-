@@ -1,0 +1,17 @@
+[build]
+  command = "npx expo export --platform web"
+  publish = "dist"
+  functions = "netlify/functions"
+
+# Profile share links: server-rendered OG preview, then redirect to public profile
+[[redirects]]
+  from = "/profile/:id"
+  to = "/.netlify/functions/profile-og?id=:id"
+  status = 200
+  force = true
+
+# SPA fallback for Expo Router
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
