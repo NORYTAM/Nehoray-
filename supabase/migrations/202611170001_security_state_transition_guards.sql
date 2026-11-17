@@ -186,6 +186,12 @@ revoke delete on public.profiles from public, anon, authenticated;
 revoke insert, update, delete on public.admin_users from public, anon, authenticated;
 grant select on public.admin_users to authenticated;
 
+-- Do not grant general table-wide SELECT on profiles. In particular, contact
+-- channels and résumés are accessible only through checked RPCs.
+revoke select on public.profiles from public, anon, authenticated;
+grant select (id, user_id, first_name, last_name, gender, role, dob, bio, picture_privacy, status, rejection_reason, pictures, what_looking_for, height, location_city, location_state, location_country, languages, nationality, is_cohen, hashkafa_type, religious_level, cultural_origin, torah_learning, praying, education_level, post_high_school_path, current_occupation_study, plan_after_marriage, marital_status, dress_style, wears_black_hat, head_covering, smoking, alcohol_consumption, field_privacy, last_active_at, created_at, updated_at, approved_at, matchmaker_id, is_active, notify_match_email, has_children, account_status, suspension_reason, suspended_until, is_update, last_approved_at, pending_changes, last_viewed_singles_at, last_viewed_intro_requests_at, last_viewed_matches_at, last_viewed_suggestions_at, previous_role_data) on public.profiles to authenticated;
+grant select on public.profiles to service_role;
+
 grant select on public.intro_requests to authenticated;
 grant select on public.suggestions to authenticated;
 grant select on public.info_requests to authenticated;
@@ -1537,5 +1543,212 @@ $$;
 
 revoke all on function public.get_workflow_contact_profiles(text, uuid) from public, anon;
 grant execute on function public.get_workflow_contact_profiles(text, uuid) to authenticated;
+
+
+create or replace function public.get_my_profile()
+returns public.profiles
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+set row_security = off
+as $$
+declare
+  v_profile public.profiles%rowtype;
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required' using errcode = '42501';
+  end if;
+  select * into v_profile from public.profiles p where p.user_id = auth.uid();
+  if not found then return null; end if;
+  return v_profile;
+end;
+$$;
+
+create or replace function public.get_profile_for_admin_review(p_profile_id uuid)
+returns public.profiles
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+set row_security = off
+as $$
+declare
+  v_profile public.profiles%rowtype;
+begin
+  if auth.uid() is null or not exists (
+    select 1 from public.admin_users a where a.user_id = auth.uid()
+  ) then
+    raise exception 'Administrator access required' using errcode = '42501';
+  end if;
+  select * into v_profile from public.profiles p where p.id = p_profile_id;
+  if not found then return null; end if;
+  return v_profile;
+end;
+$$;
+
+create or replace function public.get_all_profiles_for_admin(
+  p_offset integer default 0,
+  p_limit integer default 500
+)
+returns setof public.profiles
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+set row_security = off
+as $$
+begin
+  if auth.uid() is null or not exists (
+    select 1 from public.admin_users a where a.user_id = auth.uid()
+  ) then
+    raise exception 'Administrator access required' using errcode = '42501';
+  end if;
+  if coalesce(p_offset, -1) < 0 or coalesce(p_limit, 0) < 1 or p_limit > 500 then
+    raise exception 'Invalid pagination range';
+  end if;
+
+  return query
+    select p.*
+    from public.profiles p
+    order by p.id
+    offset p_offset
+    limit p_limit;
+end;
+$$;
+
+create or replace function public.get_profiles_for_viewer(p_profile_ids uuid[])
+returns setof public.profiles
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+set row_security = off
+as $$
+declare
+  v_profile_id uuid;
+  v_profile public.profiles%rowtype;
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required' using errcode = '42501';
+  end if;
+
+  for v_profile_id in
+    select distinct id from unnest(coalesce(p_profile_ids, array[]::uuid[])) as ids(id)
+  loop
+    v_profile := public.get_profile_for_viewer(v_profile_id);
+    if v_profile.id is not null then
+      return next v_profile;
+    end if;
+  end loop;
+  return;
+end;
+$$;
+
+-- Public sharing remains available without login. This deliberately preserves
+-- the existing public page's age and location presentation, while keeping
+-- contact details/resumés out of anonymous responses and masking other fields
+-- marked Ask Me. Do not use this RPC for authenticated private workflow reads.
+create or replace function public.get_public_profile_for_share(p_profile_id uuid)
+returns public.profiles
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+set row_security = off
+as $$
+declare
+  v_target public.profiles%rowtype;
+begin
+  select * into v_target
+  from public.profiles p
+  where p.id = p_profile_id
+    and p.status = 'approved'
+    and p.is_active = true
+    and coalesce(p.account_status, 'active') = 'active';
+  if not found then return null; end if;
+
+  -- Intentional product behavior: age and location remain visible on the
+  -- public share page even when their Ask Me flags are set.
+  v_target.phone := null;
+  v_target.email := null;
+  v_target.whatsapp := null;
+  v_target.resume_url := null;
+
+  if coalesce(v_target.field_privacy ->> 'whatLookingFor', v_target.field_privacy ->> 'what_looking_for', 'false') = 'true' then
+    v_target.what_looking_for := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'height', 'false') = 'true' then
+    v_target.height := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'languages', 'false') = 'true' then
+    v_target.languages := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'nationality', 'false') = 'true' then
+    v_target.nationality := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'isCohen', v_target.field_privacy ->> 'is_cohen', 'false') = 'true' then
+    v_target.is_cohen := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'hashkafaType', v_target.field_privacy ->> 'hashkafa_type', 'false') = 'true' then
+    v_target.hashkafa_type := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'torahLearning', v_target.field_privacy ->> 'torah_learning', 'false') = 'true' then
+    v_target.torah_learning := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'praying', 'false') = 'true' then
+    v_target.praying := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'educationLevel', v_target.field_privacy ->> 'education_level', 'false') = 'true' then
+    v_target.education_level := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'postHighSchoolPath', v_target.field_privacy ->> 'post_high_school_path', 'false') = 'true' then
+    v_target.post_high_school_path := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'currentOccupationStudy', v_target.field_privacy ->> 'current_occupation_study', 'false') = 'true' then
+    v_target.current_occupation_study := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'planAfterMarriage', v_target.field_privacy ->> 'plan_after_marriage', 'false') = 'true' then
+    v_target.plan_after_marriage := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'maritalStatus', v_target.field_privacy ->> 'marital_status', 'false') = 'true' then
+    v_target.marital_status := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'dressStyle', v_target.field_privacy ->> 'dress_style', 'false') = 'true' then
+    v_target.dress_style := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'wearsBlackHat', v_target.field_privacy ->> 'wears_black_hat', 'false') = 'true' then
+    v_target.wears_black_hat := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'headCovering', v_target.field_privacy ->> 'head_covering', 'false') = 'true' then
+    v_target.head_covering := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'smoking', 'false') = 'true' then
+    v_target.smoking := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'alcoholConsumption', v_target.field_privacy ->> 'alcohol_consumption', 'false') = 'true' then
+    v_target.alcohol_consumption := null;
+  end if;
+
+  -- Preserve only a non-reversible thumbnail placeholder for hidden photos:
+  -- the UI uses the count to explain that private photos exist.
+  if coalesce(v_target.picture_privacy, 'none') <> 'always' then
+    v_target.pictures := array_fill('', array[coalesce(array_length(v_target.pictures, 1), 0)]);
+  end if;
+
+  return v_target;
+end;
+$$;
+
+revoke all on function public.get_my_profile() from public, anon;
+revoke all on function public.get_profile_for_admin_review(uuid) from public, anon;
+revoke all on function public.get_all_profiles_for_admin(integer, integer) from public, anon;
+revoke all on function public.get_profiles_for_viewer(uuid[]) from public, anon;
+revoke all on function public.get_public_profile_for_share(uuid) from public;
+grant execute on function public.get_my_profile() to authenticated;
+grant execute on function public.get_profile_for_admin_review(uuid) to authenticated;
+grant execute on function public.get_all_profiles_for_admin(integer, integer) to authenticated;
+grant execute on function public.get_profiles_for_viewer(uuid[]) to authenticated;
+grant execute on function public.get_public_profile_for_share(uuid) to anon, authenticated;
 
 commit;
