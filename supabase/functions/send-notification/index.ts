@@ -370,7 +370,7 @@ async function authorizeNotification(
     case "engagement_proposal":
     case "engagement_confirmed": {
       const engagementId = stringValue(data.engagementId);
-      if (!engagementId || !recipient) return false;
+      if (!engagementId || !active(actor) || !active(recipient)) return false;
       const { data: engagement } = await adminClient
         .from("engagements")
         .select("id, user1_id, user2_id, user1_confirmed, user2_confirmed, confirmed_at")
@@ -395,7 +395,7 @@ async function authorizeNotification(
 
     case "engagement_news": {
       const engagementId = stringValue(data.engagementId);
-      if (!engagementId || !active(recipient)) return false;
+      if (!engagementId || !active(actor) || !active(recipient)) return false;
       const { data: engagement } = await adminClient
         .from("engagements")
         .select("user1_id, user2_id, user1_confirmed, user2_confirmed, confirmed_at")
