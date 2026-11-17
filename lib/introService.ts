@@ -11,7 +11,7 @@ export interface AuthorizedWorkflowContact {
   resume_url?: string | null;
 }
 
-interface IntroRequest {
+export interface IntroRequest {
   id: string;
   requester_id: string;
   requested_profile_id: string;
