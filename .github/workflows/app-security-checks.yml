@@ -30,6 +30,12 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
+      - name: Dependency security report
+        shell: bash
+        run: |
+          npm audit --json > npm-audit.json || true
+          node -e 'const a=require("./npm-audit.json"); const rows=Object.entries(a.vulnerabilities || {}).map(([name,v]) => ({name,severity:v.severity,range:v.range,fixAvailable:v.fixAvailable,via:(v.via || []).map(x => typeof x === "string" ? x : x.title)})); console.log(JSON.stringify({summary:a.metadata?.vulnerabilities, vulnerabilities:rows}, null, 2));'
+
       - name: Type-check application
         env:
           EXPO_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-public-anon-key
