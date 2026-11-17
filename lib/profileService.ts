@@ -445,7 +445,7 @@ class ProfileService {
               {
                 type: 'matchmaker_selected',
                 purpose: 'facilitator_chosen',
-                profileId: data.id,
+                profileId: updatedMeta.id,
                 singleUserId: user.id,
               }
             );
@@ -464,7 +464,7 @@ class ProfileService {
           `${displayName} submitted a profile for approval.`,
           {
             type: 'admin_new_profile',
-            profileId: data.id,
+            profileId: updatedMeta.id,
             userName: displayName,
           },
           { excludeUserIds: [user.id] }
@@ -667,15 +667,19 @@ class ProfileService {
       const oldMatchmakerId = currentProfile?.matchmaker_id || null;
       const newMatchmakerId = matchmakerId;
 
-      const { data, error } = await supabase
+      const { data: updatedMeta, error } = await supabase
         .from('profiles')
         .update(updateData)
         .eq('user_id', user.id)
-        .select()
+        .select('id')
         .single();
 
-      if (error) {
-        return { success: false, error: error.message };
+      if (error || !updatedMeta) {
+        return { success: false, error: error?.message || 'Could not update profile' };
+      }
+      const { data: updatedProfile, error: reloadError } = await supabase.rpc('get_my_profile');
+      if (reloadError || !updatedProfile) {
+        console.error('Profile updated but could not reload the owner profile:', reloadError);
       }
 
       // Notify matchmaker if they were newly selected (different from before)
@@ -701,7 +705,7 @@ class ProfileService {
               {
                 type: 'matchmaker_selected',
                 purpose: 'facilitator_chosen',
-                profileId: data.id,
+                profileId: updatedMeta.id,
                 singleUserId: user.id,
               }
             );
@@ -724,7 +728,7 @@ class ProfileService {
               : `${displayName} resubmitted their profile after rejection.`,
             {
               type: 'admin_profile_resubmitted',
-              profileId: data.id,
+              profileId: updatedMeta.id,
               userName: displayName,
               wasApproved,
             },
@@ -735,7 +739,7 @@ class ProfileService {
         }
       }
 
-      return { success: true, profile: data, wasResubmitted: shouldResetStatus };
+      return { success: true, profile: updatedProfile ?? undefined, wasResubmitted: shouldResetStatus };
     } catch (error) {
       console.error('Error updating profile:', error);
       return { success: false, error: 'An unexpected error occurred' };
@@ -821,14 +825,20 @@ class ProfileService {
         updatePayload.previous_role_data = previousRoleData;
       }
 
-      const { data: updated, error: updateError } = await supabase
+      const { data: updatedMeta, error: updateError } = await supabase
         .from('profiles')
         .update(updatePayload)
         .eq('user_id', user.id)
-        .select()
+        .select('id')
         .single();
 
-      if (updateError) return { success: false, error: updateError.message };
+      if (updateError || !updatedMeta) {
+        return { success: false, error: updateError?.message || 'Could not switch profile role' };
+      }
+      const { data: updatedProfile, error: reloadError } = await supabase.rpc('get_my_profile');
+      if (reloadError || !updatedProfile) {
+        return { success: false, error: reloadError?.message || 'Role changed but profile could not be reloaded' };
+      }
 
       // Notify admins about the role switch
       try {
@@ -843,7 +853,7 @@ class ProfileService {
         console.error('Failed to notify admins of role switch:', notifError);
       }
 
-      return { success: true, profile: updated };
+      return { success: true, profile: updatedProfile };
     } catch (error) {
       console.error('Error switching role:', error);
       return { success: false, error: 'An unexpected error occurred' };
@@ -1212,7 +1222,7 @@ class ProfileService {
       const [profileSinglesQuery, introRequestsQuery] = await Promise.all([
         supabase
           .from('profiles')
-          .select('*')
+          .select('id')
           .eq('matchmaker_id', profile.id)
           .eq('role', 'single')
           .order('created_at', { ascending: false }),
@@ -1253,7 +1263,7 @@ class ProfileService {
       if (introRequestProfileIds.size > 0) {
         const { data: introSingles, error: introSinglesError } = await supabase
           .from('profiles')
-          .select('*')
+          .select('id')
           .in('id', Array.from(introRequestProfileIds))
           .eq('role', 'single')
           .order('created_at', { ascending: false });
@@ -1265,23 +1275,31 @@ class ProfileService {
         }
       }
 
-      // Combine and deduplicate by profile ID
-      const allSinglesMap = new Map<string, Profile>();
-      
-      // Add profile-based singles
-      if (profileSingles) {
-        profileSingles.forEach(single => {
-          allSinglesMap.set(single.id, single);
-        });
+      // Combine unique profile IDs from both relationship sources.
+      const allSingleIds = new Set<string>();
+      for (const row of profileSingles ?? []) {
+        if (row.id) allSingleIds.add(row.id);
+      }
+      for (const id of introRequestProfileIds) {
+        allSingleIds.add(id);
       }
 
-      // Add intro request singles
-      introRequestSingles.forEach(single => {
-        allSinglesMap.set(single.id, single);
-      });
+      // Return only fields this viewer is authorized to see.
+      let allSingles: Profile[] = [];
+      if (allSingleIds.size > 0) {
+        const { data: visibleSingles, error: visibleSinglesError } = await supabase.rpc(
+          'get_profiles_for_viewer',
+          { p_profile_ids: Array.from(allSingleIds) },
+        );
+        if (visibleSinglesError) {
+          console.error('Error loading privacy-filtered singles:', visibleSinglesError);
+          return { success: false, error: visibleSinglesError.message };
+        }
+        allSingles = (visibleSingles ?? []) as Profile[];
+      }
 
-      // Convert map to array and sort by created_at
-      const allSingles = Array.from(allSinglesMap.values()).sort((a, b) => {
+      // Convert to array and sort by created_at
+      allSingles.sort((a, b) => {
         const dateA = new Date(a.created_at || 0).getTime();
         const dateB = new Date(b.created_at || 0).getTime();
         return dateB - dateA;
