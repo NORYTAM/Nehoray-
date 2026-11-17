@@ -98,12 +98,7 @@ function compareByAge(a: Profile, b: Profile, oldestFirst: boolean): number {
 async function fetchHomeData() {
   const [currentProfileResult, profilesQuery, viewedResult, adminUsersQuery] = await Promise.all([
     profileService.getProfile(),
-    supabase
-      .from('profiles')
-      .select('*')
-      .eq('status', 'approved')
-      .eq('is_active', true)
-      .eq('role', 'single'),
+    supabase.rpc('get_directory_profiles'),
     pictureViewService.getViewedProfiles(),
     supabase.from('admin_users').select('user_id'),
   ]);
