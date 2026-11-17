@@ -36,106 +36,39 @@ class EngagementService {
         return { success: false, error: 'Not authenticated' };
       }
 
-      console.log('proposeEngagement called by:', user.id, 'for:', otherUserId);
+      const { data: engagement, error } = await supabase.rpc('confirm_engagement', {
+        p_other_user_id: otherUserId,
+      });
 
-      // Ensure user1_id is always less than user2_id for consistency
-      const [user1Id, user2Id] = [user.id, otherUserId].sort();
-      console.log('Sorted IDs - user1Id:', user1Id, 'user2Id:', user2Id);
-
-      // Check if engagement already exists
-      const { data: existing, error: fetchError } = await supabase
-        .from('engagements')
-        .select('*')
-        .eq('user1_id', user1Id)
-        .eq('user2_id', user2Id)
-        .maybeSingle();
-
-      if (fetchError) {
-        console.error('Error checking existing engagement:', fetchError);
-        return { success: false, error: fetchError.message };
+      if (error || !engagement) {
+        console.error('Error confirming engagement:', error);
+        return { success: false, error: error?.message || 'Could not update engagement' };
       }
 
-      console.log('Existing engagement:', existing);
+      const bothConfirmed = engagement.user1_confirmed && engagement.user2_confirmed;
+      if (bothConfirmed) {
+        try {
+          const { data: profiles } = await supabase
+            .from('profiles')
+            .select('user_id, first_name')
+            .in('user_id', [engagement.user1_id, engagement.user2_id]);
 
-      if (existing) {
-        // Update confirmation for current user
-        const isUser1 = user.id === user1Id;
-        const updateField = isUser1 ? 'user1_confirmed' : 'user2_confirmed';
+          const nameMap = new Map(profiles?.map(p => [p.user_id, p.first_name]) ?? []);
+          const name1 = nameMap.get(engagement.user1_id) ?? 'Someone';
+          const name2 = nameMap.get(engagement.user2_id) ?? 'someone';
 
-        console.log('Updating engagement - isUser1:', isUser1, 'updateField:', updateField);
-
-        // Check if both will be confirmed after this update
-        const otherConfirmed = isUser1 ? existing.user2_confirmed : existing.user1_confirmed;
-        const updateData: any = { [updateField]: true };
-        if (otherConfirmed) {
-          updateData.confirmed_at = new Date().toISOString();
+          notificationService.notifyAllUsersExcept(
+            [engagement.user1_id, engagement.user2_id],
+            '💍 New Engagement!',
+            `Mazal Tov! ${name1} and ${name2} are engaged! 🎉`,
+            { type: 'engagement_news', engagementId: engagement.id }
+          ).catch(() => {});
+        } catch {
+          // A community announcement must never roll back a confirmed engagement.
         }
-
-        const { data, error: updateError } = await supabase
-          .from('engagements')
-          .update(updateData)
-          .eq('id', existing.id)
-          .select()
-          .single();
-
-        if (updateError) {
-          console.error('Error updating engagement:', updateError);
-          return { success: false, error: updateError.message };
-        }
-
-        console.log('Updated engagement:', data);
-
-        // Both parties have now confirmed → broadcast to all other users
-        if (otherConfirmed && data) {
-          try {
-            // Fetch first names of both users for the notification message
-            const { data: profiles } = await supabase
-              .from('profiles')
-              .select('user_id, first_name')
-              .in('user_id', [user1Id, user2Id]);
-
-            const nameMap = new Map(profiles?.map(p => [p.user_id, p.first_name]) ?? []);
-            const name1 = nameMap.get(user1Id) ?? 'Someone';
-            const name2 = nameMap.get(user2Id) ?? 'someone';
-
-            notificationService.notifyAllUsersExcept(
-              [user1Id, user2Id],
-              '💍 New Engagement!',
-              `Mazal Tov! ${name1} and ${name2} are engaged! 🎉`,
-              { type: 'engagement_news' }
-            ).catch(() => {});
-          } catch {
-            // Broadcast failure should never block the engagement confirmation
-          }
-        }
-
-        return { success: true, engagement: data };
-      } else {
-        // Create new engagement with current user's confirmation
-        const isUser1 = user.id === user1Id;
-        const newEngagement = {
-          user1_id: user1Id,
-          user2_id: user2Id,
-          user1_confirmed: isUser1 ? true : false,
-          user2_confirmed: isUser1 ? false : true,
-        };
-
-        console.log('Creating new engagement:', newEngagement);
-
-        const { data, error: insertError } = await supabase
-          .from('engagements')
-          .insert(newEngagement)
-          .select()
-          .single();
-
-        if (insertError) {
-          console.error('Error creating engagement:', insertError);
-          return { success: false, error: insertError.message };
-        }
-
-        console.log('Created engagement:', data);
-        return { success: true, engagement: data };
       }
+
+      return { success: true, engagement };
     } catch (error) {
       console.error('Error in proposeEngagement:', error);
       return { success: false, error: 'Failed to propose engagement' };
@@ -301,17 +234,17 @@ class EngagementService {
         return { success: false, error: 'Not authenticated' };
       }
 
-      const [user1Id, user2Id] = [user.id, otherUserId].sort();
-
-      const { error } = await supabase
-        .from('engagements')
-        .delete()
-        .eq('user1_id', user1Id)
-        .eq('user2_id', user2Id);
+      const { data, error } = await supabase.rpc('undo_engagement', {
+        p_other_user_id: otherUserId,
+      });
 
       if (error) {
         console.error('Error deleting engagement:', error);
         return { success: false, error: error.message };
+      }
+
+      if (data !== true) {
+        return { success: false, error: 'Engagement not found or already removed' };
       }
 
       return { success: true };
