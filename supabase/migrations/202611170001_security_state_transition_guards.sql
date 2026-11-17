@@ -664,6 +664,8 @@ declare
   v_suggestion public.suggestions%rowtype;
   v_other_status text;
   v_other_choice text;
+  v_own_status text;
+  v_own_choice text;
   v_is_one boolean;
 begin
   if auth.uid() is null then raise exception 'Authentication required' using errcode = '42501'; end if;
@@ -675,6 +677,12 @@ begin
   v_is_one := v_suggestion.profile_one_id = v_profile_id;
   if not v_is_one and v_suggestion.profile_two_id <> v_profile_id then raise exception 'You are not part of this suggestion' using errcode = '42501'; end if;
   if v_suggestion.status = 'rejected' then raise exception 'This suggestion was declined'; end if;
+  v_own_status := case when v_is_one then v_suggestion.profile_one_status else v_suggestion.profile_two_status end;
+  v_own_choice := case when v_is_one then v_suggestion.profile_one_continuation_choice else v_suggestion.profile_two_continuation_choice end;
+  if v_own_status not in ('pending', 'accepted')
+     or (v_own_status = 'accepted' and v_own_choice is not null) then
+    raise exception 'You have already accepted and selected how to continue';
+  end if;
 
   if p_choice = 'with_middle_person' and p_middle_person_id is null then
     raise exception 'Choose a matchmaker to continue through a matchmaker';
@@ -753,7 +761,10 @@ begin
   ) then raise exception 'Selected matchmaker is not available'; end if;
 
   if v_is_one then
-    if v_suggestion.profile_one_status <> 'accepted' then raise exception 'You must accept before choosing how to continue'; end if;
+    if v_suggestion.profile_one_status <> 'accepted'
+       or v_suggestion.profile_one_continuation_choice is not null then
+      raise exception 'You must accept before choosing how to continue, and may choose only once';
+    end if;
     v_other_status := v_suggestion.profile_two_status;
     v_other_choice := v_suggestion.profile_two_continuation_choice;
     update public.suggestions
@@ -763,7 +774,10 @@ begin
            updated_at = now()
      where id = p_suggestion_id returning * into v_suggestion;
   else
-    if v_suggestion.profile_two_status <> 'accepted' then raise exception 'You must accept before choosing how to continue'; end if;
+    if v_suggestion.profile_two_status <> 'accepted'
+       or v_suggestion.profile_two_continuation_choice is not null then
+      raise exception 'You must accept before choosing how to continue, and may choose only once';
+    end if;
     v_other_status := v_suggestion.profile_one_status;
     v_other_choice := v_suggestion.profile_one_continuation_choice;
     update public.suggestions
