@@ -446,7 +446,7 @@ async function sendMatchEmail(
     .select("notify_match_email, first_name")
     .eq("user_id", userId)
     .maybeSingle();
-  if (profileError || profile?.notify_match_email === false) return;
+  if (profileError || !profile || profile.notify_match_email === false) return;
 
   const { data: authData, error: authError } = await adminClient.auth.admin.getUserById(userId);
   if (authError || !authData?.user?.email) return;
