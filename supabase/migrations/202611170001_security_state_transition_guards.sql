@@ -204,6 +204,9 @@ begin
     raise exception 'Requested profile is not available';
   end if;
   if v_requested.id = v_requester.id then raise exception 'You cannot request yourself'; end if;
+  if p_matchmaker_id = v_requester.id or p_matchmaker_id = v_requested.id then
+    raise exception 'A match participant cannot be their own matchmaker';
+  end if;
 
   select * into v_matchmaker from public.profiles
    where id = p_matchmaker_id for share;
@@ -357,6 +360,9 @@ begin
   v_selected_matchmaker := coalesce(p_matchmaker_id, v_request.requester_middle_person_id);
 
   if p_choice = 'with_middle_person' or v_requester_choice = 'with_middle_person' then
+    if v_selected_matchmaker = v_request.requester_id or v_selected_matchmaker = v_request.requested_profile_id then
+      raise exception 'A match participant cannot be their own matchmaker';
+    end if;
     v_requester_choice := 'with_middle_person';
     v_requested_choice := 'with_middle_person';
     if not exists (
@@ -433,6 +439,9 @@ begin
   -- The existing product rule is preserved: if either side chooses a matchmaker,
   -- both sides continue with a matchmaker.
   if p_choice = 'with_middle_person' or v_requester_choice = 'with_middle_person' or v_requested_choice = 'with_middle_person' then
+    if v_selected_matchmaker = v_request.requester_id or v_selected_matchmaker = v_request.requested_profile_id then
+      raise exception 'A match participant cannot be their own matchmaker';
+    end if;
     v_requester_choice := 'with_middle_person';
     v_requested_choice := 'with_middle_person';
     if not exists (
@@ -633,10 +642,16 @@ begin
   if not v_is_one and v_suggestion.profile_two_id <> v_profile_id then raise exception 'You are not part of this suggestion' using errcode = '42501'; end if;
   if v_suggestion.status = 'rejected' then raise exception 'This suggestion was declined'; end if;
 
-  if p_middle_person_id is not null and not exists (
-    select 1 from public.profiles m where m.id = p_middle_person_id
-      and m.status = 'approved' and m.is_active = true
-      and coalesce(m.account_status, 'active') = 'active'
+  if p_choice = 'with_middle_person' and p_middle_person_id is null then
+    raise exception 'Choose a matchmaker to continue through a matchmaker';
+  end if;
+  if p_middle_person_id is not null and (
+    p_middle_person_id in (v_suggestion.profile_one_id, v_suggestion.profile_two_id)
+    or not exists (
+      select 1 from public.profiles m where m.id = p_middle_person_id
+        and m.status = 'approved' and m.is_active = true
+        and coalesce(m.account_status, 'active') = 'active'
+    )
   ) then raise exception 'Selected matchmaker is not available'; end if;
 
   if v_is_one then
@@ -691,10 +706,16 @@ begin
   v_is_one := v_suggestion.profile_one_id = v_profile_id;
   if not v_is_one and v_suggestion.profile_two_id <> v_profile_id then raise exception 'You are not part of this suggestion' using errcode = '42501'; end if;
   if v_suggestion.status = 'rejected' then raise exception 'This suggestion was declined'; end if;
-  if p_middle_person_id is not null and not exists (
-    select 1 from public.profiles m where m.id = p_middle_person_id
-      and m.status = 'approved' and m.is_active = true
-      and coalesce(m.account_status, 'active') = 'active'
+  if p_choice = 'with_middle_person' and p_middle_person_id is null then
+    raise exception 'Choose a matchmaker to continue through a matchmaker';
+  end if;
+  if p_middle_person_id is not null and (
+    p_middle_person_id in (v_suggestion.profile_one_id, v_suggestion.profile_two_id)
+    or not exists (
+      select 1 from public.profiles m where m.id = p_middle_person_id
+        and m.status = 'approved' and m.is_active = true
+        and coalesce(m.account_status, 'active') = 'active'
+    )
   ) then raise exception 'Selected matchmaker is not available'; end if;
 
   if v_is_one then
@@ -739,12 +760,42 @@ declare
   v_request public.info_requests%rowtype;
 begin
   if auth.uid() is null then raise exception 'Authentication required' using errcode = '42501'; end if;
-  if p_field_name is null or length(trim(p_field_name)) = 0 or length(p_field_name) > 80 then raise exception 'Invalid field'; end if;
+  if p_field_name not in (
+    'pictures', 'torahLearning', 'educationLevel', 'hasChildren',
+    'torah_learning', 'education_level', 'has_children',
+    'height', 'dob', 'phone', 'email', 'whatsapp',
+    'location_city', 'location_state', 'location_country',
+    'languages', 'nationality', 'is_cohen', 'hashkafa_type',
+    'praying', 'post_high_school_path', 'current_occupation_study',
+    'plan_after_marriage', 'what_looking_for', 'marital_status',
+    'dress_style', 'wears_black_hat', 'head_covering',
+    'smoking', 'alcohol_consumption'
+  ) then
+    raise exception 'This information field is not supported';
+  end if;
   select * into v_requester from public.profiles where user_id = auth.uid();
   if not found or v_requester.status <> 'approved' or not v_requester.is_active then raise exception 'An active approved profile is required'; end if;
   select * into v_requested from public.profiles where id = p_requested_profile_id;
   if not found or v_requested.status <> 'approved' or not v_requested.is_active then raise exception 'Requested profile is not available'; end if;
   if v_requester.id = v_requested.id then raise exception 'You cannot request information from yourself'; end if;
+
+  if exists (
+    select 1 from public.intro_requests r
+    where r.status in ('accepted', 'completed')
+      and (
+        (r.requester_id = v_requester.id and r.requested_profile_id = v_requested.id)
+        or (r.requester_id = v_requested.id and r.requested_profile_id = v_requester.id)
+      )
+  ) or exists (
+    select 1 from public.suggestions s
+    where s.status in ('accepted', 'completed')
+      and (
+        (s.profile_one_id = v_requester.id and s.profile_two_id = v_requested.id)
+        or (s.profile_one_id = v_requested.id and s.profile_two_id = v_requester.id)
+      )
+  ) then
+    raise exception 'Information requests are not available after a match is accepted';
+  end if;
 
   if p_field_name <> 'pictures'
      and coalesce(v_requested.field_privacy ->> p_field_name, 'false') <> 'true' then
