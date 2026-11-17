@@ -134,10 +134,7 @@ class InfoRequestService {
 
       const { data, error } = await supabase
         .from('info_requests')
-        .select(`
-          *,
-          requested_profile:requested_profile_id (*)
-        `)
+        .select('*')
         .eq('requester_id', profile.id)
         .order('created_at', { ascending: false });
 
@@ -181,13 +178,7 @@ class InfoRequestService {
             id,
             first_name,
             last_name,
-            gender,
-            pictures,
-            picture_privacy,
-            location_city,
-            location_state,
-            location_country,
-            dob
+            gender
           )
         `)
         .eq('requested_profile_id', profile.id)
@@ -198,7 +189,23 @@ class InfoRequestService {
         return { success: false, error: error.message };
       }
 
-      return { success: true, requests: data };
+      const requests = await Promise.all(
+        (data ?? []).map(async (request: any) => {
+          const requesterId = request.requester_profile?.id;
+          if (!requesterId) return request;
+          const { data: safeProfile, error: safeProfileError } = await supabase.rpc(
+            'get_profile_for_viewer',
+            { p_profile_id: requesterId },
+          );
+          if (safeProfileError || !safeProfile) {
+            console.warn('Could not load privacy-filtered requester profile:', safeProfileError?.message);
+            return request;
+          }
+          return { ...request, requester_profile: safeProfile };
+        }),
+      );
+
+      return { success: true, requests };
     } catch (error) {
       console.error('Unexpected error fetching received requests:', error);
       return { success: false, error: 'An unexpected error occurred' };
