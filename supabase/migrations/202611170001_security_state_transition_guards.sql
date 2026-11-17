@@ -1038,7 +1038,7 @@ stable
 security definer
 set search_path = public, pg_temp
 set row_security = off
-as $
+as $$
 declare
   v_target public.profiles%rowtype;
   v_viewer_profile_id uuid;
@@ -1232,7 +1232,7 @@ begin
 
   return v_target;
 end;
-$;
+$$;
 
 create or replace function public.get_directory_profiles()
 returns setof public.profiles
@@ -1241,7 +1241,7 @@ stable
 security definer
 set search_path = public, pg_temp
 set row_security = off
-as $
+as $$
 declare
   v_profile_id uuid;
   v_admin boolean := false;
@@ -1276,7 +1276,7 @@ begin
 
   return;
 end;
-$;
+$$;
 
 revoke all on function public.get_profile_for_viewer(uuid) from public, anon;
 revoke all on function public.get_directory_profiles() from public, anon;
