@@ -1002,4 +1002,274 @@ comment on function public.requested_person_respond_to_intro_request(uuid, text,
 comment on function public.confirm_engagement(uuid) is 'Atomically creates or confirms an engagement for the authenticated user and the selected partner.';
 comment on function public.undo_engagement(uuid) is 'Allows either engagement participant to remove the pair record.';
 
+
+-- Private profile data is masked in authenticated member reads unless the
+-- viewer owns the profile, is an administrator, or the specific info request
+-- has been approved. The public-profile share page is deliberately not routed
+-- through this function; its existing age/location presentation is unchanged.
+create or replace function public.has_approved_profile_info_request(
+  p_requester_profile_id uuid,
+  p_requested_profile_id uuid,
+  p_field_names text[]
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+set row_security = off
+as $
+  select exists (
+    select 1
+    from public.info_requests r
+    where r.requester_id = p_requester_profile_id
+      and r.requested_profile_id = p_requested_profile_id
+      and r.status = 'approved'
+      and r.field_name = any(p_field_names)
+  );
+$;
+
+create or replace function public.get_profile_for_viewer(p_profile_id uuid)
+returns public.profiles
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+set row_security = off
+as $
+declare
+  v_target public.profiles%rowtype;
+  v_viewer_profile_id uuid;
+  v_is_admin boolean := false;
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required' using errcode = '42501';
+  end if;
+
+  select * into v_target
+  from public.profiles p
+  where p.id = p_profile_id;
+
+  if not found then
+    return null;
+  end if;
+
+  if v_target.user_id = auth.uid() then
+    return v_target;
+  end if;
+
+  select p.id into v_viewer_profile_id
+  from public.profiles p
+  where p.user_id = auth.uid();
+
+  select exists (
+    select 1 from public.admin_users a where a.user_id = auth.uid()
+  ) into v_is_admin;
+
+  if v_is_admin then
+    return v_target;
+  end if;
+
+  if v_target.status <> 'approved'
+     or v_target.is_active is distinct from true
+     or coalesce(v_target.account_status, 'active') <> 'active' then
+    return null;
+  end if;
+
+  -- If the viewer has no profile, no Ask Me fields can be disclosed.
+  if v_viewer_profile_id is null then
+    v_target.dob := case when coalesce(v_target.field_privacy ->> 'dob', 'false') = 'true' then null else v_target.dob end;
+    v_target.what_looking_for := case when coalesce(v_target.field_privacy ->> 'what_looking_for', 'false') = 'true' then null else v_target.what_looking_for end;
+    v_target.height := case when coalesce(v_target.field_privacy ->> 'height', 'false') = 'true' then null else v_target.height end;
+    v_target.location_city := case when coalesce(v_target.field_privacy ->> 'location_city', 'false') = 'true' then null else v_target.location_city end;
+    v_target.location_state := case when coalesce(v_target.field_privacy ->> 'location_state', 'false') = 'true' then null else v_target.location_state end;
+    v_target.location_country := case when coalesce(v_target.field_privacy ->> 'location_country', 'false') = 'true' then null else v_target.location_country end;
+    v_target.languages := case when coalesce(v_target.field_privacy ->> 'languages', 'false') = 'true' then null else v_target.languages end;
+    v_target.nationality := case when coalesce(v_target.field_privacy ->> 'nationality', 'false') = 'true' then null else v_target.nationality end;
+    v_target.is_cohen := case when coalesce(v_target.field_privacy ->> 'is_cohen', 'false') = 'true' then null else v_target.is_cohen end;
+    v_target.hashkafa_type := case when coalesce(v_target.field_privacy ->> 'hashkafa_type', 'false') = 'true' then null else v_target.hashkafa_type end;
+    v_target.torah_learning := case when coalesce(v_target.field_privacy ->> 'torahLearning', v_target.field_privacy ->> 'torah_learning', 'false') = 'true' then null else v_target.torah_learning end;
+    v_target.praying := case when coalesce(v_target.field_privacy ->> 'praying', 'false') = 'true' then null else v_target.praying end;
+    v_target.education_level := case when coalesce(v_target.field_privacy ->> 'educationLevel', v_target.field_privacy ->> 'education_level', 'false') = 'true' then null else v_target.education_level end;
+    v_target.post_high_school_path := case when coalesce(v_target.field_privacy ->> 'post_high_school_path', 'false') = 'true' then null else v_target.post_high_school_path end;
+    v_target.current_occupation_study := case when coalesce(v_target.field_privacy ->> 'current_occupation_study', 'false') = 'true' then null else v_target.current_occupation_study end;
+    v_target.plan_after_marriage := case when coalesce(v_target.field_privacy ->> 'plan_after_marriage', 'false') = 'true' then null else v_target.plan_after_marriage end;
+    v_target.marital_status := case when coalesce(v_target.field_privacy ->> 'marital_status', 'false') = 'true' then null else v_target.marital_status end;
+    v_target.dress_style := case when coalesce(v_target.field_privacy ->> 'dress_style', 'false') = 'true' then null else v_target.dress_style end;
+    v_target.wears_black_hat := case when coalesce(v_target.field_privacy ->> 'wears_black_hat', 'false') = 'true' then null else v_target.wears_black_hat end;
+    v_target.head_covering := case when coalesce(v_target.field_privacy ->> 'head_covering', 'false') = 'true' then null else v_target.head_covering end;
+    v_target.smoking := case when coalesce(v_target.field_privacy ->> 'smoking', 'false') = 'true' then null else v_target.smoking end;
+    v_target.alcohol_consumption := case when coalesce(v_target.field_privacy ->> 'alcohol_consumption', 'false') = 'true' then null else v_target.alcohol_consumption end;
+    v_target.phone := case when coalesce(v_target.field_privacy ->> 'phone', 'false') = 'true' then null else v_target.phone end;
+    v_target.email := case when coalesce(v_target.field_privacy ->> 'email', 'false') = 'true' then null else v_target.email end;
+    v_target.whatsapp := case when coalesce(v_target.field_privacy ->> 'whatsapp', 'false') = 'true' then null else v_target.whatsapp end;
+    v_target.has_children := case when coalesce(v_target.field_privacy ->> 'hasChildren', v_target.field_privacy ->> 'has_children', 'false') = 'true' then null else v_target.has_children end;
+    v_target.resume_url := null;
+    return v_target;
+  end if;
+
+  if coalesce(v_target.field_privacy ->> 'dob', 'false') = 'true'
+     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['dob']) then
+    v_target.dob := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'what_looking_for', 'false') = 'true'
+     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['what_looking_for']) then
+    v_target.what_looking_for := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'height', 'false') = 'true'
+     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['height']) then
+    v_target.height := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'location_city', 'false') = 'true'
+     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['location_city']) then
+    v_target.location_city := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'location_state', 'false') = 'true'
+     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['location_state']) then
+    v_target.location_state := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'location_country', 'false') = 'true'
+     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['location_country']) then
+    v_target.location_country := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'languages', 'false') = 'true'
+     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['languages']) then
+    v_target.languages := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'nationality', 'false') = 'true'
+     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['nationality']) then
+    v_target.nationality := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'is_cohen', 'false') = 'true'
+     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['is_cohen']) then
+    v_target.is_cohen := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'hashkafa_type', 'false') = 'true'
+     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['hashkafa_type']) then
+    v_target.hashkafa_type := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'torahLearning', v_target.field_privacy ->> 'torah_learning', 'false') = 'true'
+     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['torahLearning', 'torah_learning']) then
+    v_target.torah_learning := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'praying', 'false') = 'true'
+     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['praying']) then
+    v_target.praying := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'educationLevel', v_target.field_privacy ->> 'education_level', 'false') = 'true'
+     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['educationLevel', 'education_level']) then
+    v_target.education_level := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'post_high_school_path', 'false') = 'true'
+     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['post_high_school_path']) then
+    v_target.post_high_school_path := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'current_occupation_study', 'false') = 'true'
+     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['current_occupation_study']) then
+    v_target.current_occupation_study := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'plan_after_marriage', 'false') = 'true'
+     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['plan_after_marriage']) then
+    v_target.plan_after_marriage := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'marital_status', 'false') = 'true'
+     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['marital_status']) then
+    v_target.marital_status := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'dress_style', 'false') = 'true'
+     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['dress_style']) then
+    v_target.dress_style := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'wears_black_hat', 'false') = 'true'
+     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['wears_black_hat']) then
+    v_target.wears_black_hat := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'head_covering', 'false') = 'true'
+     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['head_covering']) then
+    v_target.head_covering := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'smoking', 'false') = 'true'
+     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['smoking']) then
+    v_target.smoking := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'alcohol_consumption', 'false') = 'true'
+     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['alcohol_consumption']) then
+    v_target.alcohol_consumption := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'phone', 'false') = 'true'
+     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['phone']) then
+    v_target.phone := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'email', 'false') = 'true'
+     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['email']) then
+    v_target.email := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'whatsapp', 'false') = 'true'
+     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['whatsapp']) then
+    v_target.whatsapp := null;
+  end if;
+  if coalesce(v_target.field_privacy ->> 'hasChildren', v_target.field_privacy ->> 'has_children', 'false') = 'true'
+     and not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['hasChildren', 'has_children']) then
+    v_target.has_children := null;
+  end if;
+
+  -- Résumés remain private unless a dedicated request has been approved.
+  if not public.has_approved_profile_info_request(v_viewer_profile_id, v_target.id, array['resume', 'resume_url', 'resumeUrl']) then
+    v_target.resume_url := null;
+  end if;
+
+  return v_target;
+end;
+$;
+
+create or replace function public.get_directory_profiles()
+returns setof public.profiles
+language plpgsql
+stable
+security definer
+set search_path = public, pg_temp
+set row_security = off
+as $
+declare
+  v_profile_id uuid;
+  v_admin boolean := false;
+  v_row record;
+  v_visible public.profiles%rowtype;
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required' using errcode = '42501';
+  end if;
+
+  select exists (
+    select 1 from public.admin_users a where a.user_id = auth.uid()
+  ) into v_admin;
+
+  for v_row in
+    select p.id
+    from public.profiles p
+    where p.status = 'approved'
+      and p.is_active = true
+      and coalesce(p.account_status, 'active') = 'active'
+      and p.role = 'single'
+      and not exists (
+        select 1 from public.admin_users a where a.user_id = p.user_id
+      )
+    order by p.created_at desc
+  loop
+    v_visible := public.get_profile_for_viewer(v_row.id);
+    if v_visible.id is not null then
+      return next v_visible;
+    end if;
+  end loop;
+
+  return;
+end;
+$;
+
+revoke all on function public.has_approved_profile_info_request(uuid, uuid, text[]) from public, anon, authenticated;
+revoke all on function public.get_profile_for_viewer(uuid) from public, anon;
+revoke all on function public.get_directory_profiles() from public, anon;
+grant execute on function public.get_profile_for_viewer(uuid) to authenticated;
+grant execute on function public.get_directory_profiles() to authenticated;
+
 commit;
