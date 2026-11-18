@@ -203,7 +203,14 @@ class ProfileService {
   /**
    * Search for a matchmaker ONLY by their authentication email (signup email)
    */
-  async findMatchmakerByEmail(searchTerm: string): Promise<{ success: boolean; matchmaker?: Profile; error?: string }> {
+  async findMatchmakerByEmail(searchTerm: string): Promise<{
+    success: boolean;
+    matchmaker?: Pick<Profile, 'id' | 'user_id' | 'first_name' | 'last_name' | 'role' | 'status'> & {
+      is_active?: boolean;
+      account_status?: string | null;
+    };
+    error?: string;
+  }> {
     try {
       if (!searchTerm || !searchTerm.trim()) {
         return { success: false, error: 'Email is required' };
@@ -426,7 +433,11 @@ class ProfileService {
         return { success: false, error: error.message };
       }
 
-      const { data: createdProfile } = await supabase.rpc('get_my_profile');
+      const { data: createdProfile, error: createdProfileError } = await supabase.rpc('get_my_profile');
+      if (createdProfileError || !createdProfile) {
+        console.error('Profile created but owner profile read failed:', createdProfileError);
+        return { success: false, error: 'Profile was created, but could not be loaded. Please sign in again.' };
+      }
 
       // Notify matchmaker if they were selected
       if (matchmakerId) {
@@ -445,7 +456,7 @@ class ProfileService {
               {
                 type: 'matchmaker_selected',
                 purpose: 'facilitator_chosen',
-                profileId: updatedMeta.id,
+                profileId: data.id,
                 singleUserId: user.id,
               }
             );
@@ -464,7 +475,7 @@ class ProfileService {
           `${displayName} submitted a profile for approval.`,
           {
             type: 'admin_new_profile',
-            profileId: updatedMeta.id,
+            profileId: data.id,
             userName: displayName,
           },
           { excludeUserIds: [user.id] }
@@ -473,7 +484,7 @@ class ProfileService {
         console.error('Failed to notify admins:', notifError);
       }
 
-      return { success: true, profile: createdProfile ?? ({ id: data.id } as Profile) };
+      return { success: true, profile: createdProfile as Profile };
     } catch (error) {
       console.error('Unexpected error:', error);
       return { success: false, error: 'An unexpected error occurred' };
@@ -1256,23 +1267,6 @@ class ProfileService {
             introRequestProfileIds.add(req.requested_profile_id);
           }
         });
-      }
-
-      // Get profiles for intro request singles
-      let introRequestSingles: Profile[] = [];
-      if (introRequestProfileIds.size > 0) {
-        const { data: introSingles, error: introSinglesError } = await supabase
-          .from('profiles')
-          .select('id')
-          .in('id', Array.from(introRequestProfileIds))
-          .eq('role', 'single')
-          .order('created_at', { ascending: false });
-
-        if (introSinglesError) {
-          console.error('Error fetching intro request singles:', introSinglesError);
-        } else {
-          introRequestSingles = introSingles || [];
-        }
       }
 
       // Combine unique profile IDs from both relationship sources.
