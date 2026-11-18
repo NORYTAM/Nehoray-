@@ -41,30 +41,30 @@ export default function EngagementButton({ otherUserId, otherUserName, currentUs
     loadCurrentUser();
   }, []);
 
-  useEffect(() => {
-    loadOtherUserAuthId();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [otherUserId]);
+  const loadEngagementStatus = useCallback(async (authId: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      setLoading(false);
+      return;
+    }
 
-  // Reload engagement status when screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      if (otherUserAuthId) {
-        loadEngagementStatus(otherUserAuthId);
-      }
-    }, [otherUserAuthId])
-  );
+    const result = await engagementService.getEngagementStatus(authId);
+    if (result.success) {
+      setEngagement(result.engagement || null);
+    } else {
+      console.error('Error loading engagement status:', result.error);
+    }
+    setLoading(false);
+  }, []);
 
-  const loadOtherUserAuthId = async () => {
+  const loadOtherUserAuthId = useCallback(async () => {
     try {
-      // Check if otherUserId is provided
       if (!otherUserId) {
         console.error('otherUserId is undefined');
         setLoading(false);
         return;
       }
 
-      // Fetch the user_id from the profile
       const { data, error } = await supabase
         .from('profiles')
         .select('user_id')
@@ -79,39 +79,26 @@ export default function EngagementButton({ otherUserId, otherUserName, currentUs
 
       if (data) {
         setOtherUserAuthId(data.user_id);
-        loadEngagementStatus(data.user_id);
+        await loadEngagementStatus(data.user_id);
       }
     } catch (error) {
       console.error('Error loading user auth ID:', error);
       setLoading(false);
     }
-  };
+  }, [otherUserId, loadEngagementStatus]);
 
-  const loadEngagementStatus = async (authId: string) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      setLoading(false);
-      return;
-    }
+  useEffect(() => {
+    loadOtherUserAuthId();
+  }, [loadOtherUserAuthId]);
 
-    const result = await engagementService.getEngagementStatus(authId);
-    if (result.success) {
-      setEngagement(result.engagement || null);
-      console.log('Engagement status loaded:', result.engagement);
-      
-      // Debug: Log which user is which
-      if (result.engagement) {
-        const [user1Id] = [user.id, authId].sort();
-        const isUser1 = user.id === user1Id;
-        console.log('Current user is user1:', isUser1);
-        console.log('Current user confirmed:', isUser1 ? result.engagement.user1_confirmed : result.engagement.user2_confirmed);
-        console.log('Other user confirmed:', isUser1 ? result.engagement.user2_confirmed : result.engagement.user1_confirmed);
+  // Reload engagement status when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      if (otherUserAuthId) {
+        loadEngagementStatus(otherUserAuthId);
       }
-    } else {
-      console.error('Error loading engagement status:', result.error);
-    }
-    setLoading(false);
-  };
+    }, [otherUserAuthId, loadEngagementStatus])
+  );
 
   const handleProposeEngagement = async () => {
     setShowConfirmModal(true);
