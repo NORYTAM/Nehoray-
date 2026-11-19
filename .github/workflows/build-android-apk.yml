@@ -1,0 +1,81 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - security/privacy-state-hardening
+    paths:
+      - "app/**"
+      - "assets/**"
+      - "components/**"
+      - "hooks/**"
+      - "lib/**"
+      - "supabase/**"
+      - "app.json"
+      - "eas.json"
+      - "package.json"
+      - "package-lock.json"
+      - "yarn.lock"
+      - ".github/workflows/build-android-apk.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-apk-preview
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and publish preview APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify Expo configuration
+        run: npx expo config --type public
+
+      - name: Verify Expo access token
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        shell: bash
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::Missing GitHub Actions secret EXPO_TOKEN. Add an Expo access token under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+      - name: Build Android APK on EAS
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EAS_NO_VCS: "1"
+        run: npx eas-cli@latest build --platform android --profile preview --non-interactive --wait
+
+      - name: Download the completed APK
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EAS_NO_VCS: "1"
+        run: |
+          mkdir -p artifacts
+          npx eas-cli@latest build:download --latest --platform android --path artifacts/zivug-mishamayim-preview.apk
+          test -s artifacts/zivug-mishamayim-preview.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: zivug-mishamayim-preview-apk
+          path: artifacts/zivug-mishamayim-preview.apk
+          if-no-files-found: error
+          retention-days: 14
